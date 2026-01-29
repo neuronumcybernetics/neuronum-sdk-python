@@ -99,6 +99,7 @@ async def init_db(db_path=DB_PATH):
         await db.execute('''
             CREATE TABLE IF NOT EXISTS actions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                operator TEXT,
                 subject TEXT,
                 description TEXT,
                 original_data TEXT,
@@ -150,10 +151,11 @@ async def store_message(user, role, message, message_type="chat", context=None, 
         )
         await db.commit()
 
-async def store_action_entry(subject: str, context: str, original_data: str, tool_id: str = None, tool_name: str = None, parameter: str = None, is_multi_step: bool = False, steps: str = None, status: str = 'pending', response: str = None, db_path=DB_PATH) -> int:
+async def store_action_entry(operator: str, subject: str, context: str, original_data: str, tool_id: str = None, tool_name: str = None, parameter: str = None, is_multi_step: bool = False, steps: str = None, status: str = 'pending', response: str = None, db_path=DB_PATH) -> int:
     """Store action entry in actions table
 
     Args:
+        operator: The cell ID of the user who triggered the action
         status: Action status ('pending', 'finished', 'failed', 'dismissed')
         response: Only used for failed actions to store error message
 
@@ -162,8 +164,8 @@ async def store_action_entry(subject: str, context: str, original_data: str, too
     """
     async with aiosqlite.connect(db_path) as db:
         cursor = await db.execute(
-            "INSERT INTO actions (subject, description, original_data, tool_id, tool_name, parameter, status, response, is_multi_step, steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (subject, context, original_data, tool_id, tool_name, parameter, status, response, is_multi_step, steps)
+            "INSERT INTO actions (operator, subject, description, original_data, tool_id, tool_name, parameter, status, response, is_multi_step, steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (operator, subject, context, original_data, tool_id, tool_name, parameter, status, response, is_multi_step, steps)
         )
         action_id = cursor.lastrowid
         await db.commit()
@@ -465,34 +467,40 @@ async def fetch_all_sitemap(db_path=DB_PATH) -> List[dict]:
 
             return sitemap_list
 
-async def fetch_all_actions(db_path=DB_PATH) -> List[dict]:
-    """Fetch all action entries from actions table (audit log)"""
+async def fetch_all_actions(operator: str = None, db_path=DB_PATH) -> List[dict]:
+    """Fetch action entries from actions table (audit log), optionally filtered by operator"""
     async with aiosqlite.connect(db_path) as db:
-        query = """SELECT id, subject, description, original_data, tool_id, tool_name, parameter, response, status, is_multi_step, steps, timestamp
-                   FROM actions ORDER BY timestamp DESC"""
-        async with db.execute(query) as cursor:
-            rows = await cursor.fetchall()
+        if operator:
+            query = """SELECT id, operator, subject, description, original_data, tool_id, tool_name, parameter, response, status, is_multi_step, steps, timestamp
+                       FROM actions WHERE operator = ? ORDER BY timestamp DESC"""
+            async with db.execute(query, (operator,)) as cursor:
+                rows = await cursor.fetchall()
+        else:
+            query = """SELECT id, operator, subject, description, original_data, tool_id, tool_name, parameter, response, status, is_multi_step, steps, timestamp
+                       FROM actions ORDER BY timestamp DESC"""
+            async with db.execute(query) as cursor:
+                rows = await cursor.fetchall()
 
         actions_list = []
         for row in rows:
             action_dict = {
                 "id": row[0],
-                "subject": row[1],
-                "description": row[2],
-                "original_data": row[3],
-                "tool_id": row[4],
-                "tool_name": row[5],
-                "parameter": row[6],
-                "response": row[7],
-                "status": row[8],
-                "is_multi_step": bool(row[9]),
-                "timestamp": row[11]
+                "subject": row[2],
+                "description": row[3],
+                "original_data": row[4],
+                "tool_id": row[5],
+                "tool_name": row[6],
+                "parameter": row[7],
+                "response": row[8],
+                "status": row[9],
+                "is_multi_step": bool(row[10]),
+                "timestamp": row[12]
             }
 
             # Parse steps if it's a multi-step action
-            if row[9]:  # is_multi_step
+            if row[10]:  # is_multi_step
                 try:
-                    action_dict["steps"] = json.loads(row[10]) if row[10] else []
+                    action_dict["steps"] = json.loads(row[11]) if row[11] else []
                 except json.JSONDecodeError:
                     action_dict["steps"] = []
             else:
@@ -933,11 +941,12 @@ async def handle_get_sitemap(cell, transmitter: dict):
     )
 
 async def handle_get_actions(cell, transmitter: dict):
-    """Handle fetching all actions from database (audit log)"""
+    """Handle fetching actions from database (audit log) for the requesting operator"""
     data = transmitter.get("data", {})
-    logging.info("Fetching actions audit log")
+    operator = transmitter.get("operator", "")
+    logging.info(f"Fetching actions audit log for operator: {operator}")
 
-    actions_list = await fetch_all_actions()
+    actions_list = await fetch_all_actions(operator=operator)
     logging.info(f"Retrieved {len(actions_list)} actions")
 
     await send_cell_response(
@@ -1155,6 +1164,12 @@ Parameters:
 
         tools_context = "\n\n".join(tool_info_list) if tool_info_list else "No tools available."
 
+        # Fetch actions history for this operator
+        all_actions = await fetch_all_actions(operator=customer_id)
+        actions_context = ""
+        for action in all_actions:
+            actions_context += f"\n- [{action['status'].upper()}] {action['tool_name']}: {action['description']} (parameters: {action['parameter']})"
+
         # Build system prompt with sitemap context and tool awareness
         system_prompt = textwrap.dedent(f"""
             You are a helpful assistant for the Neuronum website. You answer questions based on the website content and can execute tools.
@@ -1167,11 +1182,15 @@ Parameters:
             AVAILABLE TOOLS:
             {tools_context}
 
+            ACTIONS HISTORY (previous user actions with their approval status):
+            {actions_context if actions_context else "No previous actions."}
+
             DECISION RULES:
             - If the user asks a question → use action "answer"
             - If the user wants to perform an action AND a suitable tool exists → use action "tool"
             - If you need more information to use a tool → use action "clarify"
             - If no tool can handle the request → use action "answer" and inform the user that no tool is installed to handle this action
+            - Use ACTIONS HISTORY to understand what the user has previously approved or declined, and tailor your suggestions accordingly
 
             RESPONSE FORMAT - You MUST respond with ONLY valid JSON, nothing else:
 
@@ -1296,6 +1315,7 @@ Parameters:
                 return
 
             action_id = await store_action_entry(
+                operator=customer_id,
                 subject=prompt[:100],
                 context=f"User {customer_id} tool suggestion",
                 original_data=json.dumps({"prompt": prompt, "customer_id": customer_id, "customer_user_id": customer_user_id}),
