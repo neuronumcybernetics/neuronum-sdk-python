@@ -3,6 +3,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import asyncio
 import sys
+import platform
 import textwrap
 from datetime import datetime
 from openai import OpenAI
@@ -25,11 +26,24 @@ from config import (
     MODEL_TOP_P,
     VLLM_MODEL_NAME,
     VLLM_API_BASE,
+    OLLAMA_MODEL_NAME,
+    OLLAMA_API_BASE,
     CONVERSATION_HISTORY_LIMIT,
     KNOWLEDGE_RETRIEVAL_LIMIT,
     FTS5_STOPWORDS,
     TEMPLATES_DIR
 )
+
+# Detect backend: Apple Silicon → Ollama, NVIDIA GPU → vLLM
+def detect_backend():
+    """Detect hardware and return (api_base, model_name, backend_name)"""
+    is_mac_arm = platform.system() == "Darwin" and platform.machine() == "arm64"
+    if is_mac_arm:
+        return OLLAMA_API_BASE, OLLAMA_MODEL_NAME, "ollama"
+    else:
+        return VLLM_API_BASE, VLLM_MODEL_NAME, "vllm"
+
+API_BASE, MODEL_NAME, BACKEND = detect_backend()
 
 # Setup Jinja2 environment
 env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
@@ -178,7 +192,7 @@ async def store_action_entry(operator: str, subject: str, context: str, original
 async def fetch_pending_action(action_id: int, db_path=DB_PATH) -> dict | None:
     """Fetch a pending action by ID for approval/execution"""
     async with aiosqlite.connect(db_path) as db:
-        query = """SELECT id, subject, description, original_data, tool_id, tool_name, parameter, status
+        query = """SELECT id, subject, description, original_data, tool_id, tool_name, parameter, status, is_multi_step, steps
                    FROM actions WHERE id = ? AND status = 'pending'"""
         async with db.execute(query, (action_id,)) as cursor:
             row = await cursor.fetchone()
@@ -191,7 +205,9 @@ async def fetch_pending_action(action_id: int, db_path=DB_PATH) -> dict | None:
                     "tool_id": row[4],
                     "tool_name": row[5],
                     "parameter": row[6],
-                    "status": row[7]
+                    "status": row[7],
+                    "is_multi_step": bool(row[8]),
+                    "steps": row[9]
                 }
             return None
 
@@ -407,27 +423,30 @@ async def set_setting(key: str, value: str, db_path=DB_PATH):
         )
         await db.commit()
 
-# OpenAI Client Configuration
+# OpenAI Client Configuration (works with both vLLM and Ollama)
 try:
-    logging.info(f"Connecting to vLLM API server at {VLLM_API_BASE}")
+    logging.info(f"Backend: {BACKEND} | Connecting to {API_BASE} | Model: {MODEL_NAME}")
 
     client = OpenAI(
-        base_url=VLLM_API_BASE,
+        base_url=API_BASE,
         api_key="EMPTY"
     )
 
-    logging.info(f"OpenAI client initialized for vLLM server")
+    logging.info(f"OpenAI client initialized for {BACKEND} server")
 
 except Exception as e:
     logging.error(f"Error initializing OpenAI client: {e}")
-    logging.error("Make sure vLLM is running: python -m vllm.entrypoints.openai.api_server --model <model-name>")
+    if BACKEND == "ollama":
+        logging.error("Make sure Ollama is running: ollama serve")
+    else:
+        logging.error("Make sure vLLM is running: python -m vllm.entrypoints.openai.api_server --model <model-name>")
     sys.exit(1)
 
 def create_chat_completion(messages, max_tokens=MODEL_MAX_TOKENS, temperature=MODEL_TEMPERATURE):
-    """Generate chat completion using OpenAI-compatible API"""
+    """Generate chat completion using OpenAI-compatible API (vLLM or Ollama)"""
     try:
         response = client.chat.completions.create(
-            model=VLLM_MODEL_NAME,
+            model=MODEL_NAME,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -446,7 +465,10 @@ def create_chat_completion(messages, max_tokens=MODEL_MAX_TOKENS, temperature=MO
 
     except Exception as e:
         logging.error(f"Error in create_chat_completion: {e}")
-        logging.error("Make sure vLLM is running at http://127.0.0.1:8000")
+        if BACKEND == "ollama":
+            logging.error("Make sure Ollama is running: ollama serve")
+        else:
+            logging.error("Make sure vLLM is running at http://127.0.0.1:8000")
         raise
 
 async def fetch_all_sitemap(db_path=DB_PATH) -> List[dict]:
@@ -640,16 +662,16 @@ Tool Response:
 Guidelines:
 - Write in third person or passive voice - NO "you", "I", "we"
 - State facts directly and concisely
-- Include specific numbers, amounts, and data
+- Include ALL specific details from the result: names, dates, times, locations, IDs, amounts
+- When the result contains a list of items, include the key details of EACH item - do not just state the count
 - No congratulations, praise, or emotional language
 - No phrases like "successfully", "great job", "went smoothly"
 - Just state what happened and the result
-- 1-2 short sentences maximum
 
 Example good responses:
 - "Account balance is €1000."
 - "€200 sent to Steven. New balance: €800."
-- "Transfer completed. Balance updated to €1500."
+- "2 meetings found: (1) Team Standup on 2027-01-30, 09:00-09:30 in Room 5. (2) Client Call on 2027-01-30, 14:00-15:00 in Room 12."
 
 Factual statement:"""
 
@@ -673,6 +695,53 @@ Factual statement:"""
             return "Tool executed."
 
     return await loop.run_in_executor(None, generate_response)
+
+
+async def generate_multi_step_summary(subject: str, step_responses: list) -> str:
+    """Generate a natural language summary of a multi-step action execution using LLM"""
+    loop = asyncio.get_running_loop()
+
+    def generate_summary():
+        try:
+            steps_text = ""
+            for step in step_responses:
+                status = step.get("status", "unknown")
+                steps_text += f"\nStep {step['step_order']} ({step['step_subject']}): [{status}] {step['response']}"
+
+            prompt = f"""Summarize this multi-step action execution into a brief factual statement.
+
+Task: {subject}
+
+Steps executed:
+{steps_text}
+
+Guidelines:
+- Write in third person or passive voice - NO "you", "I", "we"
+- State facts directly and concisely
+- Include specific numbers, amounts, and data from the results
+- No congratulations, praise, or emotional language
+- If a step failed, clearly state which step failed and why
+- 2-3 short sentences maximum
+
+Summary:"""
+
+            messages = [{"role": "user", "content": prompt}]
+
+            response = create_chat_completion(
+                messages=messages,
+                max_tokens=200,
+                temperature=0.3
+            )
+
+            return response['choices'][0]['message']['content'].strip()
+
+        except Exception as e:
+            logging.error(f"Error generating multi-step summary: {e}")
+            success_count = sum(1 for s in step_responses if s.get("status") == "success")
+            total = len(step_responses)
+            return f"{success_count}/{total} steps completed for: {subject}"
+
+    return await loop.run_in_executor(None, generate_summary)
 
 
 # Infrastructure Setup
@@ -857,7 +926,7 @@ async def handle_get_status(cell, transmitter: dict):
     )
 
 async def handle_get_index(cell, transmitter: dict):
-    """Handle getting the index/welcome page for customers"""
+    """Handle getting the index/welcome page for operators"""
     data = transmitter.get("data", {})
     operator = transmitter.get("operator", {})
     logging.info("Fetching index page")
@@ -958,15 +1027,15 @@ async def handle_get_actions(cell, transmitter: dict):
 
 
 async def handle_approve(cell, transmitter: dict):
-    """Handle customer approval of a pending action
+    """Handle operator approval of a pending action
 
     Payload: {type: "approve", action_id: X}
     """
     data = transmitter.get("data", {})
     action_id = data.get("action_id")
-    customer_id = transmitter.get("operator", "anonymous_customer")
+    operator = transmitter.get("operator", "anonymous_operator")
 
-    logging.info(f"[Customer {customer_id}] Approving action {action_id}")
+    logging.info(f"[Operator {operator}] Approving action {action_id}")
 
     if not action_id:
         await send_cell_response(
@@ -992,38 +1061,127 @@ async def handle_approve(cell, transmitter: dict):
     tool_name = pending_action.get("tool_name")
     parameters = json.loads(pending_action.get("parameter", "{}"))
     original_data = json.loads(pending_action.get("original_data", "{}"))
-    customer_user_id = original_data.get("customer_user_id", f"customer_{customer_id}")
+    operator = original_data.get("operator", f"operator_{operator}")
+    is_multi_step = pending_action.get("is_multi_step", False)
 
     try:
-        # Execute the tool
         registry = await tool_registry.get_registry()
-        mcp_result = await registry.call_tool(tool_name, parameters, customer_id)
-        logging.info(f"[Approved Tool Result]: {mcp_result}")
 
-        # Convert tool result to natural language
-        tool_response = await convert_tool_result_to_natural_language(
-            tool_name,
-            mcp_result,
-            pending_action.get("subject", "")[:50]
-        )
+        if is_multi_step:
+            # Multi-step action execution
+            steps_str = pending_action.get("steps", "[]")
+            try:
+                steps = json.loads(steps_str) if steps_str else []
+            except json.JSONDecodeError:
+                steps = []
 
-        # Update action status to success
-        await update_action_status(action_id, "success", tool_response)
+            if not steps:
+                await update_action_status(action_id, "failed", "No steps found in multi-step action")
+                await send_cell_response(
+                    cell,
+                    transmitter.get("transmitter_id"),
+                    {"json": "Error: No steps found in multi-step action"},
+                    data.get("public_key", "")
+                )
+                return
 
-        await store_message(customer_user_id, "assistant", tool_response)
+            logging.info(f"[Multi-Step Execution]: {len(steps)} steps for action {action_id}")
 
-        await send_cell_response(
-            cell,
-            transmitter.get("transmitter_id"),
-            {"json": tool_response},
-            data.get("public_key", "")
-        )
+            step_responses = []
+            for step in steps:
+                step_order = step.get("step_order", len(step_responses) + 1)
+                step_subject = step.get("subject", f"Step {step_order}")
+                step_tool_name = step.get("tool_name", "")
+                step_parameters = step.get("parameters", {})
+
+                logging.info(f"[Step {step_order}]: {step_tool_name} - {step_subject}")
+
+                try:
+                    mcp_result = await registry.call_tool(step_tool_name, step_parameters, operator)
+
+                    step_response = await convert_tool_result_to_natural_language(
+                        step_tool_name,
+                        mcp_result,
+                        step_subject
+                    )
+
+                    step_responses.append({
+                        "step_order": step_order,
+                        "step_subject": step_subject,
+                        "status": "success",
+                        "response": step_response
+                    })
+
+                    logging.info(f"[Step {step_order} Complete]: {step_response}")
+
+                except Exception as step_error:
+                    logging.error(f"[Step {step_order} Failed]: {step_error}")
+
+                    step_responses.append({
+                        "step_order": step_order,
+                        "step_subject": step_subject,
+                        "status": "error",
+                        "response": f"Error: {str(step_error)}"
+                    })
+
+                    # Stop on first error
+                    summary = await generate_multi_step_summary(
+                        pending_action.get("subject", ""),
+                        step_responses
+                    )
+
+                    await update_action_status(action_id, "failed", summary)
+                    await store_message(operator, "assistant", summary)
+
+                    await send_cell_response(
+                        cell,
+                        transmitter.get("transmitter_id"),
+                        {"json": summary},
+                        data.get("public_key", "")
+                    )
+                    return
+
+            # All steps completed successfully
+            summary = await generate_multi_step_summary(
+                pending_action.get("subject", ""),
+                step_responses
+            )
+
+            await update_action_status(action_id, "success", summary)
+            await store_message(operator, "assistant", summary)
+
+            await send_cell_response(
+                cell,
+                transmitter.get("transmitter_id"),
+                {"json": summary},
+                data.get("public_key", "")
+            )
+
+        else:
+            # Single-step action execution
+            mcp_result = await registry.call_tool(tool_name, parameters, operator)
+            logging.info(f"[Approved Tool Result]: {mcp_result}")
+
+            tool_response = await convert_tool_result_to_natural_language(
+                tool_name,
+                mcp_result,
+                pending_action.get("subject", "")[:50]
+            )
+
+            await update_action_status(action_id, "success", tool_response)
+            await store_message(operator, "assistant", tool_response)
+
+            await send_cell_response(
+                cell,
+                transmitter.get("transmitter_id"),
+                {"json": tool_response},
+                data.get("public_key", "")
+            )
 
     except Exception as tool_error:
         logging.error(f"Approved tool execution failed: {tool_error}")
         error_message = "I apologize, but I encountered an issue while processing your request."
 
-        # Update action status to failed
         await update_action_status(action_id, "failed", str(tool_error))
 
         await send_cell_response(
@@ -1035,15 +1193,15 @@ async def handle_approve(cell, transmitter: dict):
 
 
 async def handle_decline(cell, transmitter: dict):
-    """Handle customer declining a pending action
+    """Handle operator declining a pending action
 
     Payload: {type: "decline", action_id: X}
     """
     data = transmitter.get("data", {})
     action_id = data.get("action_id")
-    customer_id = transmitter.get("operator", "anonymous_customer")
+    operator = transmitter.get("operator", "anonymous_operator")
 
-    logging.info(f"[Customer {customer_id}] Declining action {action_id}")
+    logging.info(f"[Operator {operator}] Declining action {action_id}")
 
     if not action_id:
         await send_cell_response(
@@ -1067,14 +1225,14 @@ async def handle_decline(cell, transmitter: dict):
         return
 
     # Update action status to dismissed
-    await update_action_status(action_id, "dismissed", "Declined by customer")
+    await update_action_status(action_id, "dismissed", "Declined by operator")
 
     original_data = json.loads(pending_action.get("original_data", "{}"))
-    customer_user_id = original_data.get("customer_user_id", f"customer_{customer_id}")
+    operator = original_data.get("operator", f"operator_{operator}")
 
     decline_message = "No problem, I've cancelled that action. Is there anything else I can help you with?"
 
-    await store_message(customer_user_id, "assistant", decline_message)
+    await store_message(operator, "assistant", decline_message)
 
     await send_cell_response(
         cell,
@@ -1090,15 +1248,15 @@ async def handle_prompt(cell, transmitter: dict):
     This endpoint:
     - Retrieves relevant templates based on user query (sitemap)
     - Uses LLM to generate a natural response based on template content
-    - Can use customer-accessible tools in a conversational flow
+    - Can use operator-accessible tools in a conversational flow
     - Can escalate requests to the queue for employee handling
     - Returns both the JSON response and the matching HTML template
     """
     data = transmitter.get("data", {})
     prompt = data.get("prompt", "")
-    customer_id = transmitter.get("operator", "anonymous_customer")
+    operator = transmitter.get("operator", "anonymous_operator")
 
-    logging.info(f"[User {customer_id}]: {prompt}")
+    logging.info(f"[User {operator}]: {prompt}")
 
     if not prompt:
         await send_cell_response(
@@ -1128,17 +1286,15 @@ async def handle_prompt(cell, transmitter: dict):
         for page in all_pages:
             sitemap_context += f"\n--- PAGE: {page['file_name']} ---\n{page['file_content']}\n"
 
-        # Fetch conversation history
-        customer_user_id = f"customer_{customer_id}"
-        history = await fetch_latest_messages(customer_user_id, limit=10)
+        history = await fetch_latest_messages(operator, limit=10)
 
-        # Get all available tools for customer use
+        # Get all available tools for operator use
         registry = await tool_registry.get_registry()
-        customer_tools = await registry.get_all_tools()
+        operator_tools = await registry.get_all_tools()
 
         # Build tool descriptions for LLM
         tool_info_list = []
-        for tool in customer_tools:
+        for tool in operator_tools:
             input_schema = tool.get("inputSchema", {})
             properties = input_schema.get("properties", {})
             required_params = input_schema.get("required", [])
@@ -1165,7 +1321,7 @@ Parameters:
         tools_context = "\n\n".join(tool_info_list) if tool_info_list else "No tools available."
 
         # Fetch actions history for this operator
-        all_actions = await fetch_all_actions(operator=customer_id)
+        all_actions = await fetch_all_actions(operator=operator)
         actions_context = ""
         for action in all_actions:
             actions_context += f"\n- [{action['status'].upper()}] {action['tool_name']}: {action['description']} (parameters: {action['parameter']})"
@@ -1186,8 +1342,10 @@ Parameters:
             {actions_context if actions_context else "No previous actions."}
 
             DECISION RULES:
-            - If the user asks a question → use action "answer"
-            - If the user wants to perform an action AND a suitable tool exists → use action "tool"
+            - If a suitable tool exists for the user's request (including viewing, listing, fetching data) → ALWAYS use action "tool". NEVER answer from memory or conversation history when a tool can handle it
+            - If the user asks a question that NO tool can handle → use action "answer"
+            - If the user's request needs exactly ONE tool call → use action "tool" with parameters filled in and NO "steps" key at all. Do NOT include "steps" for single tool calls
+            - ONLY if the user's request requires TWO OR MORE tool calls → use action "tool" with a "steps" array. Examples: booking 2 meetings = 2 steps, deleting 3 items = 3 steps. A single action like "view meetings" or "book 1 meeting" is NOT multi-step
             - If you need more information to use a tool → use action "clarify"
             - If no tool can handle the request → use action "answer" and inform the user that no tool is installed to handle this action
             - Use ACTIONS HISTORY to understand what the user has previously approved or declined, and tailor your suggestions accordingly
@@ -1197,8 +1355,12 @@ Parameters:
             For answering questions:
             {{"action": "answer", "message": "Your response here"}}
 
-            For executing a tool - you MUST include ALL required parameters from the tool definition:
+            For executing a single tool - you MUST include ALL required parameters from the tool definition:
             {{"action": "tool", "tool_name": "exact_tool_name", "parameters": {{"param1": "value1", "param2": "value2"}}, "message": "Confirmation message with ALL details"}}
+
+            For executing multiple actions (multi-step) - use when 2 or more tool calls are needed, even with the same tool.
+            IMPORTANT: Put ALL actions inside the "steps" array. The top-level "parameters" MUST be empty {{}}.
+            {{"action": "tool", "tool_name": "add_meeting", "parameters": {{}}, "message": "Confirmation of all steps", "steps": [{{"step_order": 1, "tool_name": "add_meeting", "parameters": {{"title": "Meeting 1", "date": "2027-01-30", "start_time": "13:00", "end_time": "14:00"}}, "subject": "Book first meeting"}}, {{"step_order": 2, "tool_name": "add_meeting", "parameters": {{"title": "Meeting 2", "date": "2027-01-31", "start_time": "16:00", "end_time": "17:00"}}, "subject": "Book second meeting"}}]}}
 
             For asking clarification:
             {{"action": "clarify", "message": "What information do you need?"}}
@@ -1209,6 +1371,9 @@ Parameters:
             - Copy the EXACT tool_name from AVAILABLE TOOLS
             - Include EVERY parameter marked (REQUIRED)
             - The "message" field must be a CONFIRMATION REQUEST with ALL specific details so the user can verify before approving
+            - NEVER include "steps" when only ONE tool call is needed. "steps" is ONLY for 2+ tool calls
+            - For multi-step actions (2+ calls), EVERY action must be in the "steps" array. Do NOT put the first action in the top-level "parameters" — top-level "parameters" must be empty {{}}. ALL actions go into "steps"
+            - MOST IMPORTANT: If the user wants to view, list, fetch, check, or look up ANY data and a tool exists for it, you MUST use action "tool". NEVER use action "answer" to provide data from conversation history. The data must come from the tool, not from memory.
 
             Respond with JSON only:
         """)
@@ -1223,7 +1388,7 @@ Parameters:
         # Add the user's question
         messages.append({"role": "user", "content": prompt})
 
-        logging.info(f"[Agent]: Processing with template {template_filename}, {len(customer_tools)} tools available")
+        logging.info(f"[Agent]: Processing with template {template_filename}, {len(operator_tools)} tools available")
 
         # Generate response
         loop = asyncio.get_running_loop()
@@ -1262,7 +1427,17 @@ Parameters:
             decision = {"action": "answer", "message": result_json}
 
         action = decision.get("action", "answer")
-        customer_message = decision.get("message", "I'm here to help. Could you please rephrase your question?")
+        operator_message = decision.get("message", "I'm here to help. Could you please rephrase your question?")
+
+        # Fallback: if the model put a tool name directly as the action value,
+        # normalize it to action="tool" with the proper tool_name field
+        tool_names_set = {t["name"] for t in operator_tools}
+        if action not in ("answer", "clarify", "tool") and action in tool_names_set:
+            logging.info(f"[Agent Decision Normalized]: action '{action}' is a tool name, normalizing to action='tool'")
+            decision["tool_name"] = action
+            decision.setdefault("parameters", {})
+            action = "tool"
+            decision["action"] = "tool"
 
         logging.info(f"[Agent Decision]: action={action}")
 
@@ -1280,70 +1455,106 @@ Parameters:
                 logging.error(f"Failed to load fallback template: {e2}")
 
         if action == "answer" or action == "clarify":
-            logging.info(f"[Agent to User]: {customer_message}")
+            logging.info(f"[Agent to User]: {operator_message}")
 
-            await store_message(customer_user_id, "user", prompt)
-            await store_message(customer_user_id, "assistant", customer_message)
+            await store_message(operator, "user", prompt)
+            await store_message(operator, "assistant", operator_message)
 
             await send_cell_response(
                 cell,
                 transmitter.get("transmitter_id"),
-                {"json": customer_message, "html": html_content},
+                {"json": operator_message, "html": html_content},
                 data.get("public_key", "")
             )
 
         elif action == "tool":
             tool_name = decision.get("tool_name", "")
             parameters = decision.get("parameters", {})
+            steps = decision.get("steps", [])
 
-            logging.info(f"[Tool Execution]: {tool_name} with params {parameters}")
+            # Normalize: if model returned steps with only 1 entry, unwrap into single-step
+            if len(steps) == 1:
+                single = steps[0]
+                tool_name = single.get("tool_name", tool_name)
+                parameters = single.get("parameters", parameters)
+                steps = []
+                # Generate proper confirmation message from step details
+                subject = single.get("subject", tool_name)
+                param_details = ", ".join(f"{k}: {v}" for k, v in parameters.items()) if parameters else ""
+                operator_message = f"I'd like to use {tool_name}: {subject}" + (f" ({param_details})" if param_details else "") + ". Please approve to proceed."
+                logging.info(f"[Normalized]: unwrapped single-entry steps into single-step for {tool_name}")
 
-            tool_info = next((t for t in customer_tools if t["name"] == tool_name), None)
-            if not tool_info:
-                logging.warning(f"User attempted to use non-accessible tool: {tool_name}")
-                customer_message = "No tool is currently installed to handle this action."
+            # Normalize: if top-level parameters are empty but no steps, check if model
+            # forgot to fill parameters (already handled by the model, just log)
+            is_multi_step = len(steps) >= 2
 
-                await store_message(customer_user_id, "user", prompt)
-                await store_message(customer_user_id, "assistant", customer_message)
+            logging.info(f"[Tool Action]: {tool_name} (multi_step={is_multi_step}, steps={len(steps)})")
+
+            # Validate all tool names exist in operator tools
+            tools_to_validate = [tool_name]
+            if is_multi_step:
+                tools_to_validate = [step.get("tool_name", "") for step in steps]
+
+            invalid_tools = [t for t in tools_to_validate if t not in tool_names_set]
+
+            if invalid_tools:
+                logging.warning(f"Invalid tool(s) referenced: {invalid_tools}")
+                operator_message = "No tool is currently installed to handle this action."
+
+                await store_message(operator, "user", prompt)
+                await store_message(operator, "assistant", operator_message)
 
                 await send_cell_response(
                     cell,
                     transmitter.get("transmitter_id"),
-                    {"json": customer_message, "html": html_content},
+                    {"json": operator_message, "html": html_content},
                     data.get("public_key", "")
                 )
                 return
 
             action_id = await store_action_entry(
-                operator=customer_id,
+                operator=operator,
                 subject=prompt[:100],
-                context=f"User {customer_id} tool suggestion",
-                original_data=json.dumps({"prompt": prompt, "customer_id": customer_id, "customer_user_id": customer_user_id}),
+                context=f"User {operator} tool suggestion",
+                original_data=json.dumps({"prompt": prompt, "operator": operator, "operator": operator}),
                 tool_name=tool_name,
                 parameter=json.dumps(parameters),
+                is_multi_step=is_multi_step,
+                steps=json.dumps(steps) if is_multi_step else None,
                 status="pending"
             )
 
-            logging.info(f"[Pending Action Created]: ID {action_id} for tool {tool_name}")
+            logging.info(f"[Pending Action Created]: ID {action_id} for tool {tool_name} (multi_step={is_multi_step})")
 
-            await store_message(customer_user_id, "user", prompt)
-            await store_message(customer_user_id, "assistant", customer_message)
+            # For multi-step actions, build a confirmation message listing all steps
+            if is_multi_step and steps:
+                step_descriptions = []
+                for i, step in enumerate(steps, 1):
+                    subject = step.get("subject", step.get("tool_name", "Unknown"))
+                    params = step.get("parameters", {})
+                    param_details = ", ".join(f"{k}: {v}" for k, v in params.items()) if params else "no parameters"
+                    step_descriptions.append(f"{i}. [{step.get('tool_name', 'unknown')}] {subject} ({param_details})")
+                step_word = "step" if len(steps) == 1 else "steps"
+                operator_message = f"I'd like to perform the following {len(steps)} {step_word}:\n" + "\n".join(step_descriptions) + "\n\nPlease approve to proceed."
+
+            await store_message(operator, "user", prompt)
+            await store_message(operator, "assistant", operator_message)
 
             await send_cell_response(
                 cell,
                 transmitter.get("transmitter_id"),
-                {"json": customer_message, "html": html_content, "action_id": action_id},
+                {"json": operator_message, "html": html_content, "action_id": action_id},
                 data.get("public_key", "")
             )
 
         else:
-            await store_message(customer_user_id, "user", prompt)
-            await store_message(customer_user_id, "assistant", customer_message)
+            await store_message(operator, "user", prompt)
+            await store_message(operator, "assistant", operator_message)
 
             await send_cell_response(
                 cell,
                 transmitter.get("transmitter_id"),
-                {"json": customer_message, "html": html_content},
+                {"json": operator_message, "html": html_content},
                 data.get("public_key", "")
             )
 
@@ -1606,7 +1817,7 @@ def is_authorized_internal_cell(operator: str, server_host: str) -> bool:
     return False
 
 
-# Handlers that community/customers are allowed to access
+# Handlers that community/operators are allowed to access
 CUSTOMER_ALLOWED_HANDLERS = {
     "prompt",
     "approve",

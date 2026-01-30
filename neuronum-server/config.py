@@ -126,6 +126,9 @@ VLLM_HOST = _config.get("VLLM_HOST", "127.0.0.1")
 VLLM_PORT = _config.get("VLLM_PORT", 8000)
 VLLM_API_BASE = _config.get("VLLM_API_BASE", "http://127.0.0.1:8000/v1")
 
+OLLAMA_MODEL_NAME = _config.get("OLLAMA_MODEL_NAME", "llama3.2:3b")
+OLLAMA_API_BASE = _config.get("OLLAMA_API_BASE", "http://127.0.0.1:11434/v1")
+
 CONVERSATION_HISTORY_LIMIT = _config.get("CONVERSATION_HISTORY_LIMIT", 5)
 KNOWLEDGE_RETRIEVAL_LIMIT = _config.get("KNOWLEDGE_RETRIEVAL_LIMIT", 2)
 FTS5_STOPWORDS = _config.get("FTS5_STOPWORDS", {"or","and","not","near"})

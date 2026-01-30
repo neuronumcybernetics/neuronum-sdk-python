@@ -1,0 +1,26 @@
+# ============================================================================
+# Neuronum Server DEPENDENCIES (Apple Silicon / Ollama)
+# ============================================================================
+# This file excludes vLLM and torch which are not needed on macOS.
+# Ollama handles model serving natively on Apple Silicon.
+
+# Core async and networking
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+websockets>=12.0
+
+# Cryptography and Cell (Neuronum Network)
+cryptography>=41.0.0
+bip-utils>=2.9.0
+
+# Database
+aiosqlite>=0.19.0
+
+# Templating
+jinja2>=3.1.0
+
+# LLM API client (OpenAI-compatible, used for both vLLM and Ollama)
+openai>=1.0.0
+
+# Tools/MCP Protocol (Model Context Protocol)
+mcp>=0.9.0

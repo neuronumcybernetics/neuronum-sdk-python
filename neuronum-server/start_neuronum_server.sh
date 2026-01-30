@@ -10,6 +10,19 @@ VLLM_LOG_FILE="vllm_server.log"
 VLLM_PID_FILE=".vllm_pid"
 SERVER_LOG_FILE="server.log"
 SERVER_PID_FILE=".server_pid"
+PLATFORM=""  # "nvidia" or "apple_silicon"
+
+detect_platform() {
+    echo "Detecting hardware platform..."
+
+    if [[ "$(uname)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+        PLATFORM="apple_silicon"
+        echo "Platform: Apple Silicon (macOS ARM64) → Using Ollama"
+    else
+        PLATFORM="nvidia"
+        echo "Platform: Linux/NVIDIA GPU → Using vLLM"
+    fi
+}
 
 show_logo() {
     local CYAN='\033[38;5;44m'
@@ -111,18 +124,27 @@ activate_venv() {
 install_dependencies() {
     echo "Installing dependencies..."
 
-    if [ ! -f "requirements.txt" ]; then
-        echo "Error: requirements.txt not found"
-        exit 1
-    fi
-
     echo -n "Upgrading pip... "
     pip install --upgrade pip --quiet
     echo "✓"
 
-    echo -n "Installing dependencies from requirements.txt... "
-    pip install -r requirements.txt --quiet
-    echo "✓"
+    if [ "$PLATFORM" == "apple_silicon" ]; then
+        if [ ! -f "requirements_mac.txt" ]; then
+            echo "Error: requirements_mac.txt not found"
+            exit 1
+        fi
+        echo -n "Installing macOS dependencies from requirements_mac.txt... "
+        pip install -r requirements_mac.txt --quiet
+        echo "✓"
+    else
+        if [ ! -f "requirements.txt" ]; then
+            echo "Error: requirements.txt not found"
+            exit 1
+        fi
+        echo -n "Installing dependencies from requirements.txt... "
+        pip install -r requirements.txt --quiet
+        echo "✓"
+    fi
 
     echo "All dependencies installed"
 }
@@ -271,6 +293,54 @@ start_vllm() {
     wait_for_model_download
 }
 
+start_ollama() {
+    echo "Setting up Ollama..."
+
+    # Check if Ollama is installed
+    if ! command -v ollama &> /dev/null; then
+        echo "Error: Ollama is not installed."
+        echo "Install it from: https://ollama.com/download"
+        echo "  or run: brew install ollama"
+        exit 1
+    fi
+
+    echo "Ollama found: $(ollama --version 2>/dev/null || echo 'installed')"
+
+    # Check if Ollama is already running
+    if curl -s -f "http://127.0.0.1:11434/api/tags" > /dev/null 2>&1; then
+        echo "Ollama is already running"
+    else
+        echo "Starting Ollama server..."
+        ollama serve > /dev/null 2>&1 &
+        sleep 3
+
+        if ! curl -s -f "http://127.0.0.1:11434/api/tags" > /dev/null 2>&1; then
+            echo "Error: Failed to start Ollama server"
+            exit 1
+        fi
+        echo "Ollama server started"
+    fi
+
+    # Pull the model if not already available
+    local ollama_model=$(python3 -c "from config import OLLAMA_MODEL_NAME; print(OLLAMA_MODEL_NAME)" 2>/dev/null)
+    if [ -z "$ollama_model" ]; then
+        ollama_model="llama3.2:3b"
+    fi
+
+    echo "Checking model: $ollama_model"
+
+    # Check if model is already pulled
+    if ollama list 2>/dev/null | grep -q "$ollama_model"; then
+        echo "Model '$ollama_model' is already available"
+    else
+        echo "Pulling model '$ollama_model' (this may take a while)..."
+        ollama pull "$ollama_model"
+        echo "Model '$ollama_model' pulled successfully"
+    fi
+
+    echo "Ollama ready with model: $ollama_model"
+}
+
 start_server() {
     echo "Starting Neuronum Server..."
 
@@ -344,12 +414,19 @@ main() {
     echo "Neuronum Server Setup"
     echo ""
 
+    detect_platform
     check_python
     create_venv
     activate_venv
     install_dependencies
     check_config
-    start_vllm
+
+    if [ "$PLATFORM" == "apple_silicon" ]; then
+        start_ollama
+    else
+        start_vllm
+    fi
+
     start_server
 
     echo ""
