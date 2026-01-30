@@ -33,8 +33,8 @@ The Neuronum SDK provides everything you need to setup your favorite AI model as
 
 ### **Requirements**
 - Python >= 3.8
-- CUDA-compatible GPU (for Neuronum Server)
-- CUDA Toolkit (for Neuronum Server)
+- **Linux/NVIDIA GPU:** CUDA-compatible GPU + CUDA Toolkit (uses vLLM for model serving)
+- **macOS Apple Silicon:** Ollama installed (uses Ollama for model serving)
 
 ------------------
 
@@ -88,9 +88,11 @@ neuronum start-server
 
 This command will:
 - Clone the neuronum-server repository (if not already present)
+- Detect your hardware platform (Apple Silicon or NVIDIA GPU)
 - Create a Python virtual environment
-- Install all dependencies (vLLM, PyTorch, etc.)
-- Start the vLLM server in the background
+- Install platform-specific dependencies
+- **Apple Silicon:** Verify Ollama is installed, start the Ollama server, and pull the configured model
+- **NVIDIA GPU:** Start the vLLM server in the background and wait for model loading
 - Launch the Neuronum Server
 
 **Check Server Status**
@@ -104,8 +106,8 @@ This will show if the Neuronum Server and vLLM Server are currently running with
 **Viewing Logs**
 
 ```sh
-tail -f neuronum-server/server.log
-tail -f neuronum-server/vllm_server.log
+tail -f neuronum-server/server.log       # Main server log
+tail -f neuronum-server/vllm_server.log  # vLLM log (NVIDIA GPU only)
 ```
 
 **Stopping the Server**
@@ -140,7 +142,7 @@ MODEL_TEMPERATURE = 0.3              # Creativity (0.0 = deterministic, 1.0 = cr
 MODEL_TOP_P = 0.85                   # Nucleus sampling (lower = more predictable)
 ```
 
-**vLLM Server:**
+**vLLM Server (NVIDIA GPU):**
 ```python
 VLLM_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"  # Model to load
                                                # Examples: "Qwen/Qwen2.5-1.5B-Instruct",
@@ -148,6 +150,13 @@ VLLM_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"  # Model to load
 VLLM_HOST = "127.0.0.1"              # Server host (127.0.0.1 = local only)
 VLLM_PORT = 8000                     # Server port
 VLLM_API_BASE = "http://127.0.0.1:8000/v1"  # Full API URL
+```
+
+**Ollama (Apple Silicon):**
+```python
+OLLAMA_MODEL_NAME = "llama3.1:8b"    # Model to load
+                                     # Examples: "llama3.2:3b", "qwen2.5:3b", "qwen2.5:7b"
+OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"  # Ollama API URL (default port: 11434)
 ```
 
 **Conversation & Knowledge:**
