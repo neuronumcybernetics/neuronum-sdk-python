@@ -118,10 +118,9 @@ neuronum stop-server
 
 Once running, the server will:
 - Connect to the Neuronum network using your Cell credentials
-- Initialize a local SQLite database for conversation memory and knowledge storage
+- Initialize a local SQLite database for conversation memory and auto-indexes files in the `templates/` directory
 - Auto-discover and launch any MCP servers in the `tools/` directory
 - Process messages from clients via the Neuronum network
-- Execute scheduled tasks defined in the `tasks/` directory
 
 **Server Configuration**
 
@@ -131,7 +130,7 @@ The server can be customized by editing the `neuronum-server/server.config` file
 ```python
 LOG_FILE = "server.log"              # Server log file location
 DB_PATH = "agent_memory.db"          # SQLite database for conversations and knowledge
-TASKS_DIR = "./tasks"                # Directory for scheduled tasks
+TEMPLATES_DIR = "./templates"        # HTML templates to auto-index on startup and serve
 ```
 
 **Model Configuration:**
