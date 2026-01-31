@@ -212,11 +212,17 @@ class MCPRegistry:
                         tool_meta = config.get("tool_meta", {})
 
                         # Enrich tools with package-level metadata from config
+                        auto_approve_config = tool_meta.get("auto_approve", False)
                         for tool in tools:
                             tool["tool_id"] = tool_meta.get("tool_id", server_name)
                             tool["package_name"] = tool_meta.get("name")
                             tool["package_description"] = tool_meta.get("description")
-                            tool["auto_approve"] = tool_meta.get("auto_approve", False)
+                            if isinstance(auto_approve_config, bool):
+                                tool["auto_approve"] = auto_approve_config
+                            elif isinstance(auto_approve_config, list):
+                                tool["auto_approve"] = tool["name"] in auto_approve_config
+                            else:
+                                tool["auto_approve"] = False
                     except Exception as e:
                         self._logger.warning(f"Could not load config for {server_name}: {e}")
 
