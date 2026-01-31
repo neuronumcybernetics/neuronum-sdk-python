@@ -427,7 +427,8 @@ Examples:
 - Controls whether tool execution requires operator approval
 - Options:
   - `false` (default) - The agent proposes the tool action and waits for the operator to approve or decline before executing
-  - `true` - The tool executes immediately without requiring operator approval (useful for read-only tools like search or information lookups)
+  - `true` - All tools in the script execute immediately without requiring operator approval (useful for read-only tools like search or information lookups)
+  - `["tool_name_1", "tool_name_2"]` - Only the listed tools are auto-approved, all other tools in the script require approval (useful when a script contains both read-only and write operations)
 
 Examples:
 ```json
@@ -435,6 +436,9 @@ Examples:
 ```
 ```json
 "auto_approve": true
+```
+```json
+"auto_approve": ["view_meetings"]
 ```
 
 **page (tool return value)**
