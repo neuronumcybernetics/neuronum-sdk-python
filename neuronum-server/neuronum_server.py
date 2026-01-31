@@ -1134,10 +1134,17 @@ async def handle_approve(cell, transmitter: dict):
                     await update_action_status(action_id, "failed", summary)
                     await store_message(operator, "assistant", summary)
 
+                    html_content = ""
+                    try:
+                        template = env.get_template("index.html")
+                        html_content = template.render()
+                    except Exception:
+                        pass
+
                     await send_cell_response(
                         cell,
                         transmitter.get("transmitter_id"),
-                        {"json": summary},
+                        {"json": summary, "html": html_content},
                         data.get("public_key", "")
                     )
                     return
@@ -1151,10 +1158,18 @@ async def handle_approve(cell, transmitter: dict):
             await update_action_status(action_id, "success", summary)
             await store_message(operator, "assistant", summary)
 
+            # Serve default page for multi-step results
+            html_content = ""
+            try:
+                template = env.get_template("index.html")
+                html_content = template.render()
+            except Exception:
+                pass
+
             await send_cell_response(
                 cell,
                 transmitter.get("transmitter_id"),
-                {"json": summary},
+                {"json": summary, "html": html_content},
                 data.get("public_key", "")
             )
 
@@ -1172,10 +1187,35 @@ async def handle_approve(cell, transmitter: dict):
             await update_action_status(action_id, "success", tool_response)
             await store_message(operator, "assistant", tool_response)
 
+            # Extract page to serve and template data from tool result
+            html_content = ""
+            page_to_serve = "index.html"
+            template_data = {}
+            try:
+                content_items = mcp_result.get("content", [])
+                if content_items:
+                    result_text = content_items[0].get("text", "")
+                    try:
+                        result_data = json.loads(result_text)
+                        page_to_serve = result_data.get("page", "index.html")
+                        template_data = result_data
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+                template = env.get_template(page_to_serve)
+                html_content = template.render(**template_data)
+                logging.info(f"[Serving Page]: {page_to_serve}")
+            except Exception as e:
+                logging.warning(f"Failed to load page {page_to_serve}: {e}")
+                try:
+                    template = env.get_template("index.html")
+                    html_content = template.render()
+                except Exception:
+                    pass
+
             await send_cell_response(
                 cell,
                 transmitter.get("transmitter_id"),
-                {"json": tool_response},
+                {"json": tool_response, "html": html_content},
                 data.get("public_key", "")
             )
 
@@ -1269,24 +1309,6 @@ async def handle_prompt(cell, transmitter: dict):
         return
 
     try:
-        # Retrieve best matching template for HTML serving
-        matched_templates = await retrieve_sitemap(prompt, include_file_name=True)
-
-        # Default to index.html if no match found
-        template_filename = "index.html"
-
-        if matched_templates:
-            template_filename = matched_templates[0][0]
-            logging.info(f"[Template Match]: {template_filename}")
-        else:
-            logging.info("[Template Match]: No match, defaulting to index.html")
-
-        # Fetch full sitemap for LLM context
-        all_pages = await fetch_all_sitemap()
-        sitemap_context = ""
-        for page in all_pages:
-            sitemap_context += f"\n--- PAGE: {page['file_name']} ---\n{page['file_content']}\n"
-
         history = await fetch_latest_messages(operator, limit=10)
 
         # Get all available tools for operator use
@@ -1328,17 +1350,9 @@ Parameters:
         for action in all_actions:
             actions_context += f"\n- [{action['status'].upper()}] {action['tool_name']}: {action['description']} (parameters: {action['parameter']})"
 
-        # Build system prompt with sitemap context and tool awareness
+        # Build system prompt — tool router (no indexed content, no answer action)
         system_prompt = textwrap.dedent(f"""
-            You are an assistant. Your ONLY sources of information are:
-            1. The INDEXED CONTENT below
-            2. The AVAILABLE TOOLS below
-            You have absolutely NO other knowledge. You must NEVER use information from your training data, general knowledge, or any source outside of what is provided below.
-
-            SERVING PAGE: {template_filename}
-
-            INDEXED CONTENT (this is ALL the information you have - use ALL relevant pages to answer):
-            {sitemap_context if sitemap_context else "No indexed content available."}
+            You are a tool router. For every user request, you MUST select a tool from AVAILABLE TOOLS and fill in its parameters. You have NO knowledge of your own — all information must come from tool execution.
 
             AVAILABLE TOOLS:
             {tools_context}
@@ -1346,44 +1360,34 @@ Parameters:
             ACTIONS HISTORY (previous operator actions with their approval status):
             {actions_context if actions_context else "No previous actions."}
 
-            DECISION RULES:
-            - If a suitable tool exists for the operator's request (including viewing, listing, fetching data) → ALWAYS use action "tool". NEVER answer from memory or conversation history when a tool can handle it
-            - If the operator asks a question that NO tool can handle → use action "answer" but ONLY from INDEXED CONTENT
-            - If the operator's request needs exactly ONE tool call → use action "tool" with parameters filled in and NO "steps" key at all. Do NOT include "steps" for single tool calls
-            - ONLY if the operator's request requires TWO OR MORE tool calls → use action "tool" with a "steps" array. Examples: booking 2 meetings = 2 steps, deleting 3 items = 3 steps. A single action like "view meetings" or "book 1 meeting" is NOT multi-step
-            - If you need more information to use a tool → use action "clarify"
-            - If no tool can handle the request AND the INDEXED CONTENT does not contain the answer → use action "answer" and say "I don't have information about that."
-            - Use ACTIONS HISTORY to understand what the operator has previously approved or declined, and tailor your suggestions accordingly
+            RULES:
+            - You MUST ALWAYS select a tool. There is no "answer" action — every request goes through a tool
+            - For general questions, information lookups, or anything not handled by a specific tool → use "search_content"
+            - If a tool matches the request and ALL required parameters are present → use action "tool"
+            - If a tool matches but required parameters are missing from the user's message → use action "clarify" and list exactly which parameters are needed
+            - If the request needs exactly ONE tool call → use action "tool" with parameters filled in and NO "steps" key
+            - ONLY if the request requires TWO OR MORE tool calls → use action "tool" with a "steps" array
+            - Use ACTIONS HISTORY to understand what the operator has previously approved or declined
 
             RESPONSE FORMAT - You MUST respond with ONLY valid JSON, nothing else:
 
-            For answering questions (ONLY from INDEXED CONTENT):
-            {{"action": "answer", "message": "Your response here"}}
+            For a single tool call:
+            {{"action": "tool", "tool_name": "exact_tool_name", "parameters": {{"param1": "value1"}}, "message": "I'd like to [description]. Please confirm."}}
 
-            For executing a single tool - you MUST include ALL required parameters from the tool definition:
-            {{"action": "tool", "tool_name": "exact_tool_name", "parameters": {{"param1": "value1", "param2": "value2"}}, "message": "I'd like to [action description with ALL details]. Please confirm."}}
-
-            For executing multiple actions (multi-step) - use when 2 or more tool calls are needed, even with the same tool.
+            For multiple tool calls (2+ steps):
             IMPORTANT: Put ALL actions inside the "steps" array. The top-level "parameters" MUST be empty {{}}.
-            {{"action": "tool", "tool_name": "add_meeting", "parameters": {{}}, "message": "Confirmation of all steps", "steps": [{{"step_order": 1, "tool_name": "add_meeting", "parameters": {{"title": "Meeting 1", "date": "2027-01-30", "start_time": "13:00", "end_time": "14:00"}}, "subject": "Book first meeting"}}, {{"step_order": 2, "tool_name": "add_meeting", "parameters": {{"title": "Meeting 2", "date": "2027-01-31", "start_time": "16:00", "end_time": "17:00"}}, "subject": "Book second meeting"}}]}}
+            {{"action": "tool", "tool_name": "first_tool", "parameters": {{}}, "message": "I'd like to perform the following actions...", "steps": [{{"step_order": 1, "tool_name": "tool_a", "parameters": {{...}}, "subject": "First action"}}, {{"step_order": 2, "tool_name": "tool_b", "parameters": {{...}}, "subject": "Second action"}}]}}
 
-            For asking clarification:
-            {{"action": "clarify", "message": "What information do you need?"}}
-
-            GROUNDING RULES (HIGHEST PRIORITY):
-            - You can ONLY answer from the INDEXED CONTENT above. When answering, combine information from ALL relevant pages, not just one
-            - NEVER generate URLs, links, commands, code snippets, or technical instructions unless they appear word-for-word in the INDEXED CONTENT
-            - NEVER invent, guess, or recall information from outside the INDEXED CONTENT. If it's not written above, you don't know it
-            - If the INDEXED CONTENT does not contain the answer, respond with: "I don't have information about that."
+            For asking clarification (tool identified but parameters missing):
+            {{"action": "clarify", "message": "To proceed, I need: [list missing parameters]"}}
 
             TOOL RULES:
             - Copy the EXACT tool_name from AVAILABLE TOOLS
             - Include EVERY parameter marked (REQUIRED)
             - Parameter values MUST match the exact type described in the tool definition. If a parameter is described as a string (e.g. "comma-separated list"), pass it as a JSON string, NOT as a JSON array
-            - The "message" field is a PROPOSAL shown to the operator BEFORE execution. It must describe what you WANT TO DO, not what was done. Use phrasing like "I'd like to..." or "Shall I...". NEVER write as if the action already happened (no "Meeting booked", "Done", "Created", etc.)
+            - The "message" field is a PROPOSAL shown to the operator BEFORE execution. It must describe what you WANT TO DO, not what was done. Use phrasing like "I'd like to..." or "Shall I...". NEVER write as if the action already happened
             - NEVER include "steps" when only ONE tool call is needed. "steps" is ONLY for 2+ tool calls
-            - For multi-step actions (2+ calls), EVERY action must be in the "steps" array. Do NOT put the first action in the top-level "parameters" — top-level "parameters" must be empty {{}}. ALL actions go into "steps"
-            - If the operator wants to view, list, fetch, check, or look up ANY data and a tool exists for it, you MUST use action "tool". NEVER use action "answer" to provide data from conversation history. The data must come from the tool, not from memory.
+            - For multi-step actions (2+ calls), EVERY action must be in the "steps" array. Top-level "parameters" must be empty {{}}
 
             Respond with JSON only:
         """)
@@ -1398,7 +1402,7 @@ Parameters:
         # Add the user's question
         messages.append({"role": "user", "content": prompt})
 
-        logging.info(f"[Agent]: Processing with template {template_filename}, {len(operator_tools)} tools available")
+        logging.info(f"[Agent]: Processing with {len(operator_tools)} tools available")
 
         # Generate response
         loop = asyncio.get_running_loop()
@@ -1434,37 +1438,42 @@ Parameters:
         try:
             decision = json.loads(result_json)
         except json.JSONDecodeError:
-            decision = {"action": "answer", "message": result_json}
+            # Fallback: if JSON parsing fails, route to search_content
+            decision = {"action": "tool", "tool_name": "search_content", "parameters": {"query": prompt}, "message": f"I'd like to search for information about: {prompt}. Please confirm."}
 
-        action = decision.get("action", "answer")
+        action = decision.get("action", "tool")
         operator_message = decision.get("message", "I'm here to help. Could you please rephrase your question?")
 
         # Fallback: if the model put a tool name directly as the action value,
         # normalize it to action="tool" with the proper tool_name field
         tool_names_set = {t["name"] for t in operator_tools}
-        if action not in ("answer", "clarify", "tool") and action in tool_names_set:
+        if action not in ("clarify", "tool") and action in tool_names_set:
             logging.info(f"[Agent Decision Normalized]: action '{action}' is a tool name, normalizing to action='tool'")
             decision["tool_name"] = action
             decision.setdefault("parameters", {})
             action = "tool"
             decision["action"] = "tool"
 
+        # Fallback: if model still chose "answer", route to search_content
+        if action == "answer":
+            logging.info("[Agent Decision Normalized]: action 'answer' normalized to search_content tool")
+            action = "tool"
+            decision["action"] = "tool"
+            decision["tool_name"] = "search_content"
+            decision["parameters"] = {"query": prompt}
+            operator_message = decision.get("message", f"I'd like to search for information about: {prompt}. Please confirm.")
+
         logging.info(f"[Agent Decision]: action={action}")
 
-        # Load the HTML template file
+        # Load default HTML template (actual page comes from tool result in handle_approve)
         html_content = ""
         try:
-            template = env.get_template(template_filename)
+            template = env.get_template("index.html")
             html_content = template.render()
         except Exception as e:
-            logging.warning(f"Failed to load template {template_filename}: {e}")
-            try:
-                template = env.get_template("index.html")
-                html_content = template.render()
-            except Exception as e2:
-                logging.error(f"Failed to load fallback template: {e2}")
+            logging.warning(f"Failed to load default template: {e}")
 
-        if action == "answer" or action == "clarify":
+        if action == "clarify":
             logging.info(f"[Agent to User]: {operator_message}")
 
             await store_message(operator, "user", prompt)
@@ -1522,40 +1531,129 @@ Parameters:
                 )
                 return
 
-            action_id = await store_action_entry(
-                operator=operator,
-                subject=prompt[:100],
-                context=f"User {operator} tool suggestion",
-                original_data=json.dumps({"prompt": prompt, "operator": operator, "operator": operator}),
-                tool_name=tool_name,
-                parameter=json.dumps(parameters),
-                is_multi_step=is_multi_step,
-                steps=json.dumps(steps) if is_multi_step else None,
-                status="pending"
-            )
+            # Check if all tools in this request have auto_approve enabled
+            tool_meta_map = {t["name"]: t for t in operator_tools}
+            if is_multi_step:
+                all_auto_approve = all(tool_meta_map.get(s.get("tool_name", ""), {}).get("auto_approve", False) for s in steps)
+            else:
+                all_auto_approve = tool_meta_map.get(tool_name, {}).get("auto_approve", False)
 
-            logging.info(f"[Pending Action Created]: ID {action_id} for tool {tool_name} (multi_step={is_multi_step})")
+            if all_auto_approve and not is_multi_step:
+                # Auto-approve: execute tool immediately without pending action
+                logging.info(f"[Auto-Approve]: executing {tool_name} directly")
 
-            # For multi-step actions, build a confirmation message listing all steps
-            if is_multi_step and steps:
-                step_descriptions = []
-                for i, step in enumerate(steps, 1):
-                    subject = step.get("subject", step.get("tool_name", "Unknown"))
-                    params = step.get("parameters", {})
-                    param_details = ", ".join(f"{k}: {v}" for k, v in params.items()) if params else "no parameters"
-                    step_descriptions.append(f"{i}. [{step.get('tool_name', 'unknown')}] {subject} ({param_details})")
-                step_word = "step" if len(steps) == 1 else "steps"
-                operator_message = f"I'd like to perform the following {len(steps)} {step_word}:\n" + "\n".join(step_descriptions) + "\n\nPlease approve to proceed."
+                try:
+                    mcp_result = await registry.call_tool(tool_name, parameters, operator)
+                    logging.info(f"[Auto-Approve Result]: {mcp_result}")
 
-            await store_message(operator, "user", prompt)
-            await store_message(operator, "assistant", operator_message)
+                    tool_response = await convert_tool_result_to_natural_language(
+                        tool_name,
+                        mcp_result,
+                        prompt[:50]
+                    )
 
-            await send_cell_response(
-                cell,
-                transmitter.get("transmitter_id"),
-                {"json": operator_message, "html": html_content, "action_id": action_id},
-                data.get("public_key", "")
-            )
+                    # Store action as completed
+                    await store_action_entry(
+                        operator=operator,
+                        subject=prompt[:100],
+                        context=f"Auto-approved tool execution",
+                        original_data=json.dumps({"prompt": prompt, "operator": operator}),
+                        tool_name=tool_name,
+                        parameter=json.dumps(parameters),
+                        is_multi_step=False,
+                        status="success",
+                        response=tool_response
+                    )
+
+                    await store_message(operator, "user", prompt)
+                    await store_message(operator, "assistant", tool_response)
+
+                    # Extract page to serve and template data from tool result
+                    page_to_serve = "index.html"
+                    template_data = {}
+                    try:
+                        content_items = mcp_result.get("content", [])
+                        if content_items:
+                            result_text = content_items[0].get("text", "")
+                            try:
+                                result_data = json.loads(result_text)
+                                page_to_serve = result_data.get("page", "index.html")
+                                template_data = result_data
+                            except (json.JSONDecodeError, AttributeError):
+                                pass
+                    except Exception:
+                        pass
+
+                    auto_html = ""
+                    try:
+                        template = env.get_template(page_to_serve)
+                        auto_html = template.render(**template_data)
+                        logging.info(f"[Serving Page]: {page_to_serve}")
+                    except Exception as e:
+                        logging.warning(f"Failed to load page {page_to_serve}: {e}")
+                        try:
+                            template = env.get_template("index.html")
+                            auto_html = template.render()
+                        except Exception:
+                            pass
+
+                    await send_cell_response(
+                        cell,
+                        transmitter.get("transmitter_id"),
+                        {"json": tool_response, "html": auto_html},
+                        data.get("public_key", "")
+                    )
+
+                except Exception as auto_error:
+                    logging.error(f"Auto-approve tool execution failed: {auto_error}")
+                    error_message = "I encountered an issue while processing your request."
+
+                    await store_message(operator, "user", prompt)
+                    await store_message(operator, "assistant", error_message)
+
+                    await send_cell_response(
+                        cell,
+                        transmitter.get("transmitter_id"),
+                        {"json": error_message, "html": html_content},
+                        data.get("public_key", "")
+                    )
+
+            else:
+                # Requires approval: create pending action
+                action_id = await store_action_entry(
+                    operator=operator,
+                    subject=prompt[:100],
+                    context=f"User {operator} tool suggestion",
+                    original_data=json.dumps({"prompt": prompt, "operator": operator}),
+                    tool_name=tool_name,
+                    parameter=json.dumps(parameters),
+                    is_multi_step=is_multi_step,
+                    steps=json.dumps(steps) if is_multi_step else None,
+                    status="pending"
+                )
+
+                logging.info(f"[Pending Action Created]: ID {action_id} for tool {tool_name} (multi_step={is_multi_step})")
+
+                # For multi-step actions, build a confirmation message listing all steps
+                if is_multi_step and steps:
+                    step_descriptions = []
+                    for i, step in enumerate(steps, 1):
+                        subject = step.get("subject", step.get("tool_name", "Unknown"))
+                        params = step.get("parameters", {})
+                        param_details = ", ".join(f"{k}: {v}" for k, v in params.items()) if params else "no parameters"
+                        step_descriptions.append(f"{i}. [{step.get('tool_name', 'unknown')}] {subject} ({param_details})")
+                    step_word = "step" if len(steps) == 1 else "steps"
+                    operator_message = f"I'd like to perform the following {len(steps)} {step_word}:\n" + "\n".join(step_descriptions) + "\n\nPlease approve to proceed."
+
+                await store_message(operator, "user", prompt)
+                await store_message(operator, "assistant", operator_message)
+
+                await send_cell_response(
+                    cell,
+                    transmitter.get("transmitter_id"),
+                    {"json": operator_message, "html": html_content, "action_id": action_id},
+                    data.get("public_key", "")
+                )
 
         else:
             await store_message(operator, "user", prompt)
@@ -1594,6 +1692,8 @@ async def handle_get_tools(cell, transmitter: dict):
             for filename in os.listdir(tools_dir):
                 if filename.endswith(".config"):
                     tool_id = filename[:-7]
+                    if tool_id == "search_content":
+                        continue
                     config_path = os.path.join(tools_dir, filename)
 
                     try:

@@ -58,7 +58,7 @@ source ~/neuronum-venv/bin/activate
 
 Install the Neuronum SDK:
 ```sh
-pip install neuronum==2026.01.0.dev1
+pip install neuronum==2026.01.0.dev2
 ```
 
 > **Note:** Always activate this virtual environment (`source ~/neuronum-venv/bin/activate`) before running any `neuronum` commands.
@@ -375,6 +375,7 @@ This folder will contain 2 files:
     "name": "Test Tool",
     "description": "A simple test tool",
     "audience": "private",
+    "auto_approve": false,
     "logo": "https://neuronum.net/static/logo_new.png"
   },
   "legals": {
@@ -420,6 +421,50 @@ Examples:
 ```
 ```json
 "audience": "acme::cell, community::cell, business::cell"
+```
+
+**auto_approve**
+- Controls whether tool execution requires operator approval
+- Options:
+  - `false` (default) - The agent proposes the tool action and waits for the operator to approve or decline before executing
+  - `true` - The tool executes immediately without requiring operator approval (useful for read-only tools like search or information lookups)
+
+Examples:
+```json
+"auto_approve": false
+```
+```json
+"auto_approve": true
+```
+
+**page (tool return value)**
+- Tools can optionally return a `"page"` key in their result to specify which HTML template the server should render and serve to the client
+- The returned data from the tool is passed into the Jinja2 template, so all keys in the tool's return dict are available as template variables
+- If no `"page"` key is returned, the server defaults to serving `index.html`
+
+Example tool returning a page with dynamic data:
+```python
+@mcp.tool()
+def view_orders(status: str = "pending", operator: str = None) -> dict:
+    """View orders filtered by status"""
+    orders = [{"id": 1, "item": "Laptop", "status": "pending"},
+              {"id": 2, "item": "Monitor", "status": "pending"}]
+    return {
+        "success": True,
+        "page": "orders.html",
+        "total_orders": len(orders),
+        "orders": orders
+    }
+```
+
+Example Jinja2 template (`templates/orders.html`):
+```html
+<h1>Orders ({{ total_orders }})</h1>
+{% for order in orders %}
+<div>
+  <p>#{{ order.id }} - {{ order.item }} ({{ order.status }})</p>
+</div>
+{% endfor %}
 ```
 
 **requirements**

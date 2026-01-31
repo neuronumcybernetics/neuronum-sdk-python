@@ -216,6 +216,7 @@ class MCPRegistry:
                             tool["tool_id"] = tool_meta.get("tool_id", server_name)
                             tool["package_name"] = tool_meta.get("name")
                             tool["package_description"] = tool_meta.get("description")
+                            tool["auto_approve"] = tool_meta.get("auto_approve", False)
                     except Exception as e:
                         self._logger.warning(f"Could not load config for {server_name}: {e}")
 

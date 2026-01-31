@@ -450,11 +450,12 @@ f"""{{
     "name": "{name}",
     "description": "{descr}",
     "audience": "private",
-    "logo": "https://neuronum.net/static/logo.png"
+    "auto_approve": false,
+    "logo": "https://neuronum.net/static/logo_new.png"
   }},
   "legals": {{
-    "terms": "https://url_to_your/terms",
-    "privacy_policy": "https://url_to_your/privacy_policy"
+    "terms": "https://neuronum.net/legals",
+    "privacy_policy": "https://neuronum.net/legals"
   }},
   "requirements": [],
   "variables": []
