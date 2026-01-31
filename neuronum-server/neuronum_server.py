@@ -1305,7 +1305,8 @@ async def handle_prompt(cell, transmitter: dict):
                 if param_name == "operator":
                     continue
                 is_required = "(REQUIRED)" if param_name in required_params else "(optional)"
-                params_desc.append(f"  - {param_name} {is_required}: {param_def.get('description', '')}")
+                param_type = param_def.get('type', 'string')
+                params_desc.append(f"  - {param_name} ({param_type}) {is_required}: {param_def.get('description', '')}")
 
             package_info = ""
             if tool.get("package_name"):
@@ -1360,7 +1361,7 @@ Parameters:
             {{"action": "answer", "message": "Your response here"}}
 
             For executing a single tool - you MUST include ALL required parameters from the tool definition:
-            {{"action": "tool", "tool_name": "exact_tool_name", "parameters": {{"param1": "value1", "param2": "value2"}}, "message": "Confirmation message with ALL details"}}
+            {{"action": "tool", "tool_name": "exact_tool_name", "parameters": {{"param1": "value1", "param2": "value2"}}, "message": "I'd like to [action description with ALL details]. Please confirm."}}
 
             For executing multiple actions (multi-step) - use when 2 or more tool calls are needed, even with the same tool.
             IMPORTANT: Put ALL actions inside the "steps" array. The top-level "parameters" MUST be empty {{}}.
@@ -1378,7 +1379,8 @@ Parameters:
             TOOL RULES:
             - Copy the EXACT tool_name from AVAILABLE TOOLS
             - Include EVERY parameter marked (REQUIRED)
-            - The "message" field must be a CONFIRMATION REQUEST with ALL specific details so the operator can verify before approving
+            - Parameter values MUST match the exact type described in the tool definition. If a parameter is described as a string (e.g. "comma-separated list"), pass it as a JSON string, NOT as a JSON array
+            - The "message" field is a PROPOSAL shown to the operator BEFORE execution. It must describe what you WANT TO DO, not what was done. Use phrasing like "I'd like to..." or "Shall I...". NEVER write as if the action already happened (no "Meeting booked", "Done", "Created", etc.)
             - NEVER include "steps" when only ONE tool call is needed. "steps" is ONLY for 2+ tool calls
             - For multi-step actions (2+ calls), EVERY action must be in the "steps" array. Do NOT put the first action in the top-level "parameters" — top-level "parameters" must be empty {{}}. ALL actions go into "steps"
             - If the operator wants to view, list, fetch, check, or look up ANY data and a tool exists for it, you MUST use action "tool". NEVER use action "answer" to provide data from conversation history. The data must come from the tool, not from memory.
