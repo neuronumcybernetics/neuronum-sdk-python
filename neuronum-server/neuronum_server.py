@@ -1990,7 +1990,7 @@ async def route_message(cell, transmitter: dict):
 async def process_cell_messages(cell):
     """Main message processing loop for cell"""
     async for transmitter in cell.sync():
-        await route_message(cell, transmitter)
+        asyncio.create_task(route_message(cell, transmitter))
 
 # Main Function
 
