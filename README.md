@@ -23,34 +23,31 @@
 
 
 ### **About the Neuronum SDK**
-The Neuronum SDK provides everything you need to setup your favorite AI model as self-hosted agentic backend. It includes the [Neuronum Server](#neuronum-server), an open source agent-wrapper that transforms your model into an executable assistant that can be managed and called with the [Neuronum Client API](#neuronum-client-api) and the [Neuronum Tools CLI](#neuronum-tools-cli) to develop and publish MCP-compliant Tools that can be installed locally on your [Neuronum Server](#neuronum-server)
+The Neuronum SDK provides everything you need to set up your favorite AI model as self-hosted work environment that can be managed and called from our official client ["kybercell™ - Your Private AI Workspace"](https://neuronum.net/#client) (Windows & Android) or the [Neuronum Client API](#neuronum-client-api).
 
-> **Protocol Note:** The Neuronum SDK is powered by an end-to-end encrypted communication protocol based on public/private key pairs derived from a randomly generated 12-word mnemonic. All data is relayed through neuronum.net, providing secure communication without the need to set up public web servers or expose your infrastructure to the public internet.
-
-> ⚠️ **Development Status:** The Neuronum SDK is currently in early stages of development and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
+> ⚠️ **Development Status:** The Neuronum SDK is currently in beta and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
 
 ------------------
 
 ### **Requirements**
 - Python >= 3.8
-- **Linux/NVIDIA GPU:** CUDA-compatible GPU + CUDA Toolkit (uses vLLM for model serving)
-- **macOS Apple Silicon:** Ollama installed (uses Ollama for model serving)
+- **Linux/NVIDIA GPU:** CUDA-compatible GPU + CUDA Toolkit
+- **macOS Apple Silicon:** Ollama
 
 ------------------
 
 ### **Table of Contents**
-In this programmers guide, you will learn how to:
-- [Connect to the Neuronum Network](#connect-to-neuronum)
-- [Deploy a Model with Neuronum Server](#neuronum-server)
-- [Call your Agent with the Neuronum Client API](#neuronum-client-api)
-- [Create & Manage a Custom Tool with the Neuronum Tools CLI](#neuronum-tools-cli)
+In this programmers guide, you will:
+- [Create a Neuronum ID](#create-a-neuronum-id)
+- [Setup a private AI Workspace](#setup-a-private-ai-workspace)
+- [Call your Workspace Agent ](#call-your-workspace-agent)
+- [Create a Workspace Tool](#create-a-workspace-tool)
 
 ------------------
 
-### **Connect To Neuronum**
-**Installation**
+### **Create a Neuronum ID**
 
-Create and activate a virtual environment:
+Setup and activate a virtual environment:
 ```sh
 python3 -m venv ~/neuronum-venv
 source ~/neuronum-venv/bin/activate
@@ -63,66 +60,26 @@ pip install neuronum==2026.01.0.dev2
 
 > **Note:** Always activate this virtual environment (`source ~/neuronum-venv/bin/activate`) before running any `neuronum` commands.
 
-**Create a Neuronum Cell (secure Identity)**
+Create Neuronum ID (called Cell):
 ```sh
 neuronum create-cell
 ```
 
-**Connect your Cell**
-```sh
-neuronum connect-cell
-```
-
 ------------------
 
-### **Neuronum Server**
-Neuronum Server is an agent-wrapper that transforms your model into an agentic backend server that can interact with the [Neuronum Client API](#neuronum-client-api) and installed tools
+### **Setup a private AI Workspace**
 
-------------------
-
-**Start the Server**
+**Install & start the Workspace Server**
 
 ```sh
 neuronum start-server
 ```
 
-This command will:
-- Clone the neuronum-server repository (if not already present)
-- Detect your hardware platform (Apple Silicon or NVIDIA GPU)
-- Create a Python virtual environment
-- Install platform-specific dependencies
-- **Apple Silicon:** Verify Ollama is installed, start the Ollama server, and pull the configured model
-- **NVIDIA GPU:** Start the vLLM server in the background and wait for model loading
-- Launch the Neuronum Server
-
-**Check Server Status**
-
-```sh
-neuronum status
-```
-
-This will show if the Neuronum Server and vLLM Server are currently running with their PIDs.
-
-**Viewing Logs**
-
-```sh
-tail -f neuronum-server/server.log       # Main server log
-tail -f neuronum-server/vllm_server.log  # vLLM log (NVIDIA GPU only)
-```
-
-**Stopping the Server**
+**Stopping the Workspace Server**
 
 ```sh
 neuronum stop-server
 ```
-
-**What the Server Does**
-
-Once running, the server will:
-- Connect to the Neuronum network using your Cell credentials
-- Initialize a local SQLite database for conversation memory and auto-indexes files in the `templates/` directory
-- Auto-discover and launch any MCP servers in the `tools/` directory
-- Process messages from clients via the Neuronum network
 
 **Server Configuration**
 
@@ -131,8 +88,8 @@ The server can be customized by editing the `neuronum-server/server.config` file
 **File Paths:**
 ```python
 LOG_FILE = "server.log"              # Server log file location
-DB_PATH = "agent_memory.db"          # SQLite database for conversations and knowledge
-TEMPLATES_DIR = "./templates"        # HTML templates to auto-index on startup and serve
+DB_PATH = "agent_memory.db"          # SQLite database for conversations and actions
+TEMPLATES_DIR = "./templates"        # HTML templates served by tools
 ```
 
 **Model Configuration:**
@@ -159,11 +116,9 @@ OLLAMA_MODEL_NAME = "llama3.1:8b"    # Model to load
 OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"  # Ollama API URL (default port: 11434)
 ```
 
-**Conversation & Knowledge:**
+**Conversation:**
 ```python
 CONVERSATION_HISTORY_LIMIT = 10      # Recent messages to include in context
-KNOWLEDGE_RETRIEVAL_LIMIT = 5        # Max knowledge chunks to retrieve
-FTS5_STOPWORDS = {...}               # Words to exclude from knowledge search
 ```
 
 After modifying the configuration, restart the server for changes to take effect:
@@ -175,7 +130,7 @@ neuronum start-server
 ------------------
 
 
-### **Neuronum Client API**
+### **Call your Workspace Agent**
 **Manage and call your Agent with ["kybercell" (official Neuronum Client)](https://neuronum.net/kybercell) or build your own custom Client using the Neuronum Client API**
 
 **Python API**
@@ -203,11 +158,11 @@ async def main():
         # ============================================
         # Example 1: Send a prompt to your Agent
         # ============================================
-        # The agent will answer questions using its knowledge base
-        # and can execute tools conversationally when needed
+        # The agent routes your message to the appropriate tool
+        # and returns the result with an optional HTML view
         prompt_data = {
             "type": "prompt",
-            "prompt": "Explain what a black hole is in one sentence"
+            "prompt": "Show me our sales performance"
         }
         tx_response = await cell.activate_tx(cell_id, prompt_data)
         print(tx_response)
@@ -215,7 +170,7 @@ async def main():
         # ============================================
         # Example 2: Action Approval Flow
         # ============================================
-        # When the agent suggests a tool action, it returns an action_id
+        # When the agent suggests a write action, it returns an action_id
         # The client can then approve or decline the action
 
         # Approve a pending action
@@ -235,34 +190,7 @@ async def main():
         print(tx_response)
 
         # ============================================
-        # Example 3: Sitemap Management
-        # ============================================
-        # Note: Sitemap entries are auto-indexed from templates on startup.
-        # Use these endpoints to manage existing entries.
-
-        # Update existing sitemap entry
-        update_sitemap_data = {
-            "type": "update_sitemap",
-            "sitemap_id": "abc123...",  # SHA256 hash ID from previous add
-            "file_content": "Updated pricing page content."
-        }
-        tx_response = await cell.activate_tx(cell_id, update_sitemap_data)
-
-        # Fetch all sitemap entries
-        get_sitemap_data = {"type": "get_sitemap"}
-        sitemap_list = await cell.activate_tx(cell_id, get_sitemap_data)
-        print(sitemap_list)
-        # Returns: [{"sitemap_id": "...", "file_name": "...", "file_content": "..."}, ...]
-
-        # Delete a sitemap entry
-        delete_sitemap_data = {
-            "type": "delete_sitemap",
-            "sitemap_id": "abc123..."
-        }
-        tx_response = await cell.activate_tx(cell_id, delete_sitemap_data)
-
-        # ============================================
-        # Example 4: Index (Welcome Page)
+        # Example 3: Index (Welcome Page)
         # ============================================
 
         # Get the index/welcome page
@@ -270,15 +198,8 @@ async def main():
         index = await cell.activate_tx(cell_id, get_index_data)
         print(index)
 
-        # Update the index message
-        update_index_data = {
-            "type": "update_index",
-            "index": "Welcome! How can I help you today?"
-        }
-        tx_response = await cell.activate_tx(cell_id, update_index_data)
-
         # ============================================
-        # Example 5: Tool Management
+        # Example 4: Tool Management
         # ============================================
 
         # List all available tools on Neuronum network
@@ -311,7 +232,7 @@ async def main():
         # Agent will restart after deletion
 
         # ============================================
-        # Example 6: Actions Audit Log
+        # Example 5: Actions Audit Log
         # ============================================
 
         # Get all actions (audit log)
@@ -321,7 +242,7 @@ async def main():
         # Returns list of actions with status, tool info, timestamps, etc.
 
         # ============================================
-        # Example 7: Agent Status
+        # Example 6: Agent Status
         # ============================================
 
         # Check if agent is running
@@ -330,7 +251,7 @@ async def main():
         print(status)  # Returns: {"json": "running"}
 
         # ============================================
-        # Example 8: Receiving Requests (Server-side)
+        # Example 7: Receiving Requests (Server-side)
         # ============================================
 
         # Listen for incoming requests using sync()
@@ -351,12 +272,12 @@ if __name__ == '__main__':
 
 ----------------------
 
-### **Neuronum Tools CLI**
-Neuronum Tools are MCP-compliant (Model Context Protocol) plugins that can be installed on the Neuronum Server and extend your Agent's functionality, enabling it to interact with external data sources and your system.
+### **Create a Workspace Tool**
+Neuronum Workspace Tools are MCP-compliant (Model Context Protocol) plugins that can be installed on the Neuronum Workspace Server and extend your Agent's functionality, enabling it to interact with external data sources and your system.
 
-> **Tools Note:** Tools are not stored encrypted on neuronum.net. **Do not include credentials, API keys, secure tokens, passwords, or any sensitive data directly in your tool code.** Use environment variables or the `variables` configuration field (when available) to handle sensitive information securely. 
+> **Tools Note:** Tools are not stored encrypted on neuronum.net. **Do not include credentials, API keys, secure tokens, passwords, or any sensitive data directly in your tool code.** Use environment variables or the `variables` configuration field (when available) to handle sensitive information securely.
 
-### **Initialize a Tool** 
+### **Initialize a Tool**
 ```sh
 neuronum init-tool
 ```
@@ -561,5 +482,3 @@ neuronum update-tool
 ```sh
 neuronum delete-tool
 ```
-
-
