@@ -63,6 +63,8 @@ class ClientConfig:
     max_retries: int = 3
     retry_delay: float = 1.0
     max_retry_delay: float = 60.0
+    websocket_ping_interval: int = 20
+    websocket_ping_timeout: int = 10
 
 
 class CryptoManager:
@@ -435,6 +437,28 @@ class BaseClient(ABC):
         except NetworkError as e:
             logger.error(f"Failed to fetch cells: {e}")
             return []
+        
+    async def tx_response(
+        self,
+        transmitter_id: str,
+        data: Dict[str, Any],
+        client_public_key_str: str
+    ) -> None:
+        """Send encrypted response to transmitter"""
+        if not self._crypto:
+            raise EncryptionError("Crypto manager not initialized")
+        
+        if not client_public_key_str:
+            raise ValueError("client_public_key_str is required")
+        
+        url = f"https://{self.network}/api/tx_response/{transmitter_id}"
+        
+        public_key = self._crypto.load_public_key_from_pem(client_public_key_str)
+        encrypted_payload = self._crypto.encrypt_with_ecdh_aesgcm(public_key, data)
+        payload = {"data": encrypted_payload, "cell": self.to_dict()}
+        
+        await self._network_client.post_request(url, payload)
+        logger.info(f"Response sent to transmitter {transmitter_id}")
     
     async def activate_tx(
         self,
@@ -484,6 +508,90 @@ class BaseClient(ABC):
             logger.debug("Received unencrypted response")
             return inner_response
     
+    async def sync(self) -> AsyncGenerator[Dict[str, Any], None]:
+        """Sync with network and yield operations as they arrive"""
+        if not isinstance(self, Cell):
+            raise ValueError("sync must be called from a Cell instance")
+
+        cell = getattr(self, 'host', None)
+        if not cell:
+            raise ValueError("host is required for Cell sync")
+
+        full_url = f"wss://{self.network}/sync/{cell}"
+
+        logger.info(f"Starting sync with {cell}")
+
+        retry_count = 0
+        while True:
+            try:
+                auth_payload = self.to_dict()
+
+                ssl_context = ssl.create_default_context()
+
+                async with websockets.connect(
+                    full_url,
+                    ssl=ssl_context,
+                    ping_interval=self.config.websocket_ping_interval,
+                    ping_timeout=self.config.websocket_ping_timeout,
+                    close_timeout=10
+                ) as ws:
+                    await ws.send(json.dumps(auth_payload))
+                    logger.info(f"Connected and authenticated to {cell}")
+                    retry_count = 0
+
+                    while True:
+                        try:
+                            raw_operation = await asyncio.wait_for(
+                                ws.recv(),
+                                timeout=self.config.timeout
+                            )
+                            operation = json.loads(raw_operation)
+
+                            if "encrypted" in operation.get("data", {}):
+                                encrypted_data = operation["data"]["encrypted"]
+
+                                try:
+                                    ephemeral_public_key_bytes = CryptoManager.safe_b64decode(
+                                        encrypted_data["ephemeralPublicKey"]
+                                    )
+                                    nonce = CryptoManager.safe_b64decode(
+                                        encrypted_data["nonce"]
+                                    )
+                                    ciphertext = CryptoManager.safe_b64decode(
+                                        encrypted_data["ciphertext"]
+                                    )
+
+                                    decrypted_data = self._crypto.decrypt_with_ecdh_aesgcm(
+                                        ephemeral_public_key_bytes, nonce, ciphertext
+                                    )
+
+                                    operation["data"].update(decrypted_data)
+                                    operation["data"].pop("encrypted")
+                                    yield operation
+                                except EncryptionError:
+                                    logger.error("Failed to decrypt operation")
+                            else:
+                                logger.warning("Received unencrypted data")
+
+                        except asyncio.TimeoutError:
+                            continue
+                        except ConnectionClosed as e:
+                            logger.warning(f"Connection closed: {e.code} - {e.reason}")
+                            break
+                        except Exception as e:
+                            logger.error(f"Error in receive loop: {e}")
+                            break
+
+            except WebSocketException as e:
+                logger.error(f"WebSocket error: {e}")
+            except Exception as e:
+                logger.error(f"General error in sync: {e}")
+
+            retry_count += 1
+            delay = 5.0
+            logger.info(f"Reconnecting in {delay}s (attempt {retry_count})")
+            await asyncio.sleep(delay)
+
     async def stream(self, cell_id, data: Dict[str, Any]) -> bool:
         """Stream encrypted data to target cell via WebSocket"""
         if not isinstance(self, Cell):

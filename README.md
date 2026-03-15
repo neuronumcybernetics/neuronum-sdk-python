@@ -7,7 +7,7 @@
   <a href="https://neuronum.net">
     <img src="https://img.shields.io/badge/Website-Neuronum-blue" alt="Website">
   </a>
-  <a href="https://github.com/neuronumcybernetics/cell-sdk-python">
+  <a href="https://neuronum.net/docs">
     <img src="https://img.shields.io/badge/Docs-Read%20now-green" alt="Documentation">
   </a>
   <a href="https://pypi.org/project/neuronum/">
@@ -21,9 +21,8 @@
 
 ------------------
 
-
-### **About the Neuronum SDK**
-The Neuronum SDK provides everything you need to set up your favorite AI model as self-hosted work environment that can be managed and called from our official client ["kybercell™ - Your Private AI Workspace"](https://neuronum.net/#client) (Windows & Android) or the [Neuronum Client API](#neuronum-client-api).
+### **About**
+Neuronum is a real-time, end-to-end encrypted data network. Transmit and receive data between any two points without managing backend infrastructure.
 
 > ⚠️ **Development Status:** The Neuronum SDK is currently in beta and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
 
@@ -31,21 +30,10 @@ The Neuronum SDK provides everything you need to set up your favorite AI model a
 
 ### **Requirements**
 - Python >= 3.8
-- **Linux/NVIDIA GPU:** CUDA-compatible GPU + CUDA Toolkit
-- **macOS Apple Silicon:** Ollama
 
 ------------------
 
-### **Table of Contents**
-In this programmers guide, you will:
-- [Create a Neuronum ID](#create-a-neuronum-id)
-- [Setup a private AI Workspace](#setup-a-private-ai-workspace)
-- [Call your Workspace Agent ](#call-your-workspace-agent)
-- [Create a Workspace Tool](#create-a-workspace-tool)
-
-------------------
-
-### **Create a Neuronum ID**
+### **Installation**
 
 Setup and activate a virtual environment:
 ```sh
@@ -55,430 +43,88 @@ source ~/neuronum-venv/bin/activate
 
 Install the Neuronum SDK:
 ```sh
-pip install neuronum==2026.01.0.dev2
+pip install neuronum==2026.03.1
 ```
 
 > **Note:** Always activate this virtual environment (`source ~/neuronum-venv/bin/activate`) before running any `neuronum` commands.
 
-Create Neuronum ID (called Cell):
+Create a Cell (your Neuronum ID):
 ```sh
 neuronum create-cell
 ```
 
 ------------------
 
-### **Setup a private AI Workspace**
+### **How it works**
 
-**Install & start the Workspace Server**
+Every participant on the network is a **Cell** — a unique, encrypted identity. Every Cell can communicate with any other Cell on the network. All you need is the recipient's Cell ID.
 
-```sh
-neuronum start-server
-```
+Cells interact using four core methods:
 
-**Stopping the Workspace Server**
+| Method | Description |
+|--------|-------------|
+| `stream(cell_id, data)` | Send data to another Cell (fire-and-forget) |
+| `activate_tx(cell_id, data)` | Send a request and wait for a response |
+| `sync()` | Listen for incoming transmissions |
+| `tx_response(transmitter_id, data, public_key)` | Send an encrypted response back |
 
-```sh
-neuronum stop-server
-```
-
-**Server Configuration**
-
-The server can be customized by editing the `neuronum-server/server.config` file. Here are the available options:
-
-**File Paths:**
-```python
-LOG_FILE = "server.log"              # Server log file location
-DB_PATH = "agent_memory.db"          # SQLite database for conversations and actions
-TEMPLATES_DIR = "./templates"        # HTML templates served by tools
-```
-
-**Model Configuration:**
-```python
-MODEL_MAX_TOKENS = 512               # Maximum tokens in responses (higher = longer answers)
-MODEL_TEMPERATURE = 0.3              # Creativity (0.0 = deterministic, 1.0 = creative)
-MODEL_TOP_P = 0.85                   # Nucleus sampling (lower = more predictable)
-```
-
-**vLLM Server (NVIDIA GPU):**
-```python
-VLLM_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"  # Model to load
-                                               # Examples: "Qwen/Qwen2.5-1.5B-Instruct",
-                                               #           "meta-llama/Llama-3.2-3B-Instruct"
-VLLM_HOST = "127.0.0.1"              # Server host (127.0.0.1 = local only)
-VLLM_PORT = 8000                     # Server port
-VLLM_API_BASE = "http://127.0.0.1:8000/v1"  # Full API URL
-```
-
-**Ollama (Apple Silicon):**
-```python
-OLLAMA_MODEL_NAME = "llama3.1:8b"    # Model to load
-                                     # Examples: "llama3.2:3b", "qwen2.5:3b", "qwen2.5:7b"
-OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"  # Ollama API URL (default port: 11434)
-```
-
-**Conversation:**
-```python
-CONVERSATION_HISTORY_LIMIT = 10      # Recent messages to include in context
-```
-
-After modifying the configuration, restart the server for changes to take effect:
-```sh
-neuronum stop-server
-neuronum start-server
-```
+All data is end-to-end encrypted. The network handles routing, key exchange, and delivery — you just send and receive.
 
 ------------------
 
+### **Quick Example**
 
-### **Call your Workspace Agent**
-**Manage and call your Agent with ["kybercell" (official Neuronum Client)](https://neuronum.net/kybercell) or build your own custom Client using the Neuronum Client API**
-
-**Python API**
+**Send data & wait for response**
 ```python
 import asyncio
 from neuronum import Cell
 
 async def main():
-
     async with Cell() as cell:
-
-        # ============================================
-        # Target Cell ID
-        # ============================================
-        cell_id = "id::cell"
-
-        # ============================================
-        # Core Methods
-        # ============================================
-        # cell.activate_tx(cell_id, data)  - Send request and wait for response
-        # cell.stream(cell_id, data)       - Send request via WebSocket (no response)
-        # cell.sync()                      - Receive incoming requests
-        # cell.tx_response(transmitter_id, data, public_key)  - Send response to a request
-
-        # ============================================
-        # Example 1: Send a prompt to your Agent
-        # ============================================
-        # The agent routes your message to the appropriate tool
-        # and returns the result with an optional HTML view
-        prompt_data = {
-            "type": "prompt",
-            "prompt": "Show me our sales performance"
-        }
-        tx_response = await cell.activate_tx(cell_id, prompt_data)
+        tx_response = await cell.activate_tx(
+          "receiver_cell_id",
+          {"msg": "Ping"}
+        )
         print(tx_response)
 
-        # ============================================
-        # Example 2: Action Approval Flow
-        # ============================================
-        # When the agent suggests a write action, it returns an action_id
-        # The client can then approve or decline the action
+asyncio.run(main())
+```
 
-        # Approve a pending action
-        approve_data = {
-            "type": "approve",
-            "action_id": 123  # ID returned from prompt response
-        }
-        tx_response = await cell.activate_tx(cell_id, approve_data)
-        print(tx_response)
+**Receive data & send response**
+```python
+import asyncio
+from neuronum import Cell
 
-        # Decline a pending action
-        decline_data = {
-            "type": "decline",
-            "action_id": 123
-        }
-        tx_response = await cell.activate_tx(cell_id, decline_data)
-        print(tx_response)
+async def main():
+    async with Cell() as cell:
+        async for tx in cell.sync():
+            data = tx.get("data", {})
 
-        # ============================================
-        # Example 3: Index (Welcome Page)
-        # ============================================
-
-        # Get the index/welcome page
-        get_index_data = {"type": "get_index"}
-        index = await cell.activate_tx(cell_id, get_index_data)
-        print(index)
-
-        # ============================================
-        # Example 4: Tool Management
-        # ============================================
-
-        # List all available tools on Neuronum network
-        available_tools = await cell.list_tools()
-        print(available_tools)
-        # Returns list of tools with metadata: [{"tool_id": "...", "name": "...", "description": "..."}, ...]
-
-        # Get all installed tools on your agent
-        get_tools_data = {"type": "get_tools"}
-        tools_info = await cell.activate_tx(cell_id, get_tools_data)
-        print(tools_info)
-        # Returns: {"tools": {"tool_id": {config_data}, ...}}
-
-        # Install a tool (requires tool to be published)
-        # Use stream() instead of activate_tx() to listen for agent restart
-        install_tool_data = {
-            "type": "install_tool",
-            "tool_id": "019ac60e-cccc-7af5-b087-f6fcf1ba1299",
-            "variables": {"API_TOKEN": "your-token"}  # Optional: tool variables
-        }
-        await cell.stream(cell_id, install_tool_data)
-        # Agent will restart and send "ping" when ready
-
-        # Delete a tool
-        delete_tool_data = {
-            "type": "delete_tool",
-            "tool_id": "019ac60e-cccc-7af5-b087-f6fcf1ba1299"
-        }
-        await cell.stream(cell_id, delete_tool_data)
-        # Agent will restart after deletion
-
-        # ============================================
-        # Example 5: Actions Audit Log
-        # ============================================
-
-        # Get all actions (audit log)
-        get_actions_data = {"type": "get_actions"}
-        actions = await cell.activate_tx(cell_id, get_actions_data)
-        print(actions)
-        # Returns list of actions with status, tool info, timestamps, etc.
-
-        # ============================================
-        # Example 6: Agent Status
-        # ============================================
-
-        # Check if agent is running
-        status_data = {"type": "get_agent_status"}
-        status = await cell.activate_tx(cell_id, status_data)
-        print(status)  # Returns: {"json": "running"}
-
-        # ============================================
-        # Example 7: Receiving Requests (Server-side)
-        # ============================================
-
-        # Listen for incoming requests using sync()
-        async for transmitter in cell.sync():
-            data = transmitter.get("data", {})
-            message_type = data.get("type")
-
-            # Send encrypted response back to the client
             await cell.tx_response(
-                transmitter_id=transmitter.get("transmitter_id"),
-                data={"json": "Response message"},
-                client_public_key_str=data.get("public_key", "")
+                tx.get("transmitter_id"),
+                {"msg": "Pong"},
+                data.get("public_key", "")
             )
 
-if __name__ == '__main__':
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
-----------------------
+**TX (Transmitter) Object**
 
-### **Create a Workspace Tool**
-Neuronum Workspace Tools are MCP-compliant (Model Context Protocol) plugins that can be installed on the Neuronum Workspace Server and extend your Agent's functionality, enabling it to interact with external data sources and your system.
-
-> **Tools Note:** Tools are not stored encrypted on neuronum.net. **Do not include credentials, API keys, secure tokens, passwords, or any sensitive data directly in your tool code.** Use environment variables or the `variables` configuration field (when available) to handle sensitive information securely.
-
-### **Initialize a Tool**
-```sh
-neuronum init-tool
-```
-You will be prompted to enter a tool name and description (e.g., "Test Tool" and "A simple test tool"). This will create a new folder named using the format: `Tool Name_ToolID` (e.g., `Test Tool_019ac60e-cccc-7af5-b087-f6fcf1ba1299`)
-
-This folder will contain 2 files:
-1. **tool.config** - Configuration and metadata for your tool
-2. **tool.py** - Your Tool/MCP server implementation
-
-**Example tool.config:**
-```config
+When you receive data via `sync()`, each transmission arrives as a TX object:
+```python
 {
-  "tool_meta": {
-    "tool_id": "019ac60e-cccc-7af5-b087-f6fcf1ba1299",
-    "version": "1.0.0",
-    "name": "Test Tool",
-    "description": "A simple test tool",
-    "audience": "private",
-    "auto_approve": false,
-    "logo": "https://neuronum.net/static/logo_new.png"
-  },
-  "legals": {
-    "terms": "https://url_to_your/terms",
-    "privacy_policy": "https://url_to_your/privacy_policy"
-  },
-  "requirements": [],
-  "variables": []
-}
-```
-
-**Example tool.py:**
-```python
-from mcp.server.fastmcp import FastMCP
-
-# Create server instance
-mcp = FastMCP("simple-example")
-
-@mcp.tool()
-def echo(message: str) -> str:
-    """Echo back a message"""
-    return f"Echo: {message}"
-
-if __name__ == "__main__":
-    mcp.run()
-```
-
-### **Tool Configuration Fields**
-
-**audience**
-- Controls who can install and use your tool
-- Options:
-  - `"private"` - Only you can use this tool
-  - `"public"` - Anyone on the Neuronum network can install this tool
-  - `"id::cell"` - Share with specific cells (comma-separated list)
-
-Examples:
-```json
-"audience": "private"
-```
-```json
-"audience": "public"
-```
-```json
-"audience": "acme::cell, community::cell, business::cell"
-```
-
-**auto_approve**
-- Controls whether tool execution requires operator approval
-- Options:
-  - `false` (default) - The agent proposes the tool action and waits for the operator to approve or decline before executing
-  - `true` - All tools in the script execute immediately without requiring operator approval (useful for read-only tools like search or information lookups)
-  - `["tool_name_1", "tool_name_2"]` - Only the listed tools are auto-approved, all other tools in the script require approval (useful when a script contains both read-only and write operations)
-
-Examples:
-```json
-"auto_approve": false
-```
-```json
-"auto_approve": true
-```
-```json
-"auto_approve": ["view_meetings"]
-```
-
-**page (tool return value)**
-- Tools can optionally return a `"page"` key in their result to specify which HTML template the server should render and serve to the client
-- The returned data from the tool is passed into the Jinja2 template, so all keys in the tool's return dict are available as template variables
-- If no `"page"` key is returned, the server defaults to serving `index.html`
-
-Example tool returning a page with dynamic data:
-```python
-@mcp.tool()
-def view_orders(status: str = "pending", operator: str = None) -> dict:
-    """View orders filtered by status"""
-    orders = [{"id": 1, "item": "Laptop", "status": "pending"},
-              {"id": 2, "item": "Monitor", "status": "pending"}]
-    return {
-        "success": True,
-        "page": "orders.html",
-        "total_orders": len(orders),
-        "orders": orders
+    "transmitter_id": "bfd2a0d009c6f784ec97c41d3738a24e0e5ac8f1",
+    "time": "1772923393",
+    "operator": "1uRQdV593S91E3T2-Vj_29mxBJoI7Cvxxg6dNFDVfv4::cell",
+    "data": {
+        "msg": "Ping",
+        "public_key": "-----BEGIN PUBLIC KEY-----\n..."
     }
-```
-
-Example Jinja2 template (`templates/orders.html`):
-```html
-<h1>Orders ({{ total_orders }})</h1>
-{% for order in orders %}
-<div>
-  <p>#{{ order.id }} - {{ order.item }} ({{ order.status }})</p>
-</div>
-{% endfor %}
-```
-
-**requirements**
-- List of Python packages your tool needs
-- Automatically installed by the Neuronum Server when the tool is added
-- Use the same format as pip requirements (e.g., `"requests"`, `"pandas>=2.0.0"`)
-
-Example:
-```json
-"requirements": [
-  "requests",
-  "pandas>=2.0.0",
-  "openai==1.12.0"
-]
-```
-
-**variables**
-- List of variable names that users need to provide when installing your tool
-- When installing the tool, users are prompted to manually set each variable one by one
-- Values are sent encrypted to the server and automatically placed into your tool.py code
-- **Important:** You don't need to add lines like `API_TOKEN = "value"` to your tool.py - the server automatically sets these variables based on user inputs
-
-Example in tool.config:
-```json
-"variables": [
-  "API_TOKEN",
-  "DB_PASSWORD",
-  "SERVICE_URL"
-]
-```
-
-**How to use variables in your tool.py:**
-
-❌ **Wrong - Don't hardcode sensitive values:**
-```python
-from mcp.server.fastmcp import FastMCP
-import requests
-
-mcp = FastMCP("api-tool")
-
-# DON'T DO THIS - Never hardcode credentials!
-API_TOKEN = "sk-1234567890abcdef"  # This will be exposed in your tool code!
-
-@mcp.tool()
-def call_api(endpoint: str) -> str:
-    """Call external API"""
-    response = requests.get(f"https://api.example.com/{endpoint}",
-                           headers={"Authorization": f"Bearer {API_TOKEN}"})
-    return response.text
-```
-
-✅ **Correct - Use variables (server auto-injects values):**
-
-First, declare the variable in your tool.config:
-```json
-{
-  ...
-  "requirements": ["requests"],
-  "variables": ["API_TOKEN"]
 }
 ```
 
-Then use it in your tool.py without defining it:
-```python
-from mcp.server.fastmcp import FastMCP
-import requests
+------------------
 
-mcp = FastMCP("api-tool")
-
-# The server automatically sets API_TOKEN based on user input during installation
-# You just use it directly - no need to define it!
-
-@mcp.tool()
-def call_api(endpoint: str) -> str:
-    """Call external API"""
-    response = requests.get(f"https://api.example.com/{endpoint}",
-                           headers={"Authorization": f"Bearer {API_TOKEN}"})
-    return response.text
-```
-
-> **Note:** This feature is only available when using the official Neuronum client.
-
-### **Update a Tool**
-After modifying your `tool.config` or `tool.py` files, submit the updates using:
-```sh
-neuronum update-tool
-```
-
-### **Delete a Tool**
-```sh
-neuronum delete-tool
-```
+### **Full Documentation**
+For the complete SDK reference including the E2EE protocol, kybercell workspace setup, message types, and tools CLI, visit the [Neuronum Docs](https://neuronum.net/docs).
