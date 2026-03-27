@@ -43,7 +43,7 @@ source ~/neuronum-venv/bin/activate
 
 Install the Neuronum SDK:
 ```sh
-pip install neuronum==2026.03.1
+pip install neuronum
 ```
 
 > **Note:** Always activate this virtual environment (`source ~/neuronum-venv/bin/activate`) before running any `neuronum` commands.
@@ -63,8 +63,9 @@ Cells interact using four core methods:
 
 | Method | Description |
 |--------|-------------|
-| `stream(cell_id, data)` | Send data to another Cell (fire-and-forget) |
-| `activate_tx(cell_id, data)` | Send a request and wait for a response |
+| `list_cells()` | Get a list of all Cells |
+| `stream(data, cell_id)` | Send data to a Cell (defaults to own Cell) |
+| `activate_tx(data, cell_id)` | Send a request and wait for a response (defaults to own Cell) |
 | `sync()` | Listen for incoming transmissions |
 | `tx_response(transmitter_id, data, public_key)` | Send an encrypted response back |
 
@@ -74,6 +75,21 @@ All data is end-to-end encrypted. The network handles routing, key exchange, and
 
 ### **Quick Example**
 
+**Stream data (fire-and-forget)**
+```python
+import asyncio
+from neuronum import Cell
+
+async def main():
+    async with Cell() as cell:
+        await cell.stream(
+          {"msg": "Ping"},
+          cell_id="receiver_cell_id"
+        )
+
+asyncio.run(main())
+```
+
 **Send data & wait for response**
 ```python
 import asyncio
@@ -82,8 +98,8 @@ from neuronum import Cell
 async def main():
     async with Cell() as cell:
         tx_response = await cell.activate_tx(
-          "receiver_cell_id",
-          {"msg": "Ping"}
+          {"msg": "Ping"},
+          cell_id="receiver_cell_id"
         )
         print(tx_response)
 
@@ -123,8 +139,3 @@ When you receive data via `sync()`, each transmission arrives as a TX object:
     }
 }
 ```
-
-------------------
-
-### **Full Documentation**
-For the complete SDK reference including the E2EE protocol, kybercell workspace setup, message types, and tools CLI, visit the [Neuronum Docs](https://neuronum.net/docs).

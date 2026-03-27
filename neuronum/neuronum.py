@@ -425,19 +425,6 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch cells: {e}")
             return []
         
-    async def list_tools(self) -> List[Dict[str, Any]]:
-        """List all available Neuronum tools"""
-        full_url = f"https://{self.network}/api/list_tools"
-        payload = {"cell": self.to_dict()}
-        
-        try:
-            data = await self._network_client.post_request(full_url, payload)
-            tools = data.get("Tools", []) if data else []
-            return tools
-        except NetworkError as e:
-            logger.error(f"Failed to fetch cells: {e}")
-            return []
-        
     async def tx_response(
         self,
         transmitter_id: str,
@@ -462,13 +449,16 @@ class BaseClient(ABC):
     
     async def activate_tx(
         self,
-        cell_id,
-        data: Dict[str, Any]
+        data: Dict[str, Any],
+        cell_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """Activate encrypted transaction with cell and return decrypted response"""
         if not self._crypto:
             raise EncryptionError("Crypto manager not initialized")
-        
+
+        if cell_id is None:
+            cell_id = self.host
+
         url = f"https://{self.network}/api/activate_tx/{cell_id}"
         payload = {"cell": self.to_dict()}
 
@@ -592,16 +582,19 @@ class BaseClient(ABC):
             logger.info(f"Reconnecting in {delay}s (attempt {retry_count})")
             await asyncio.sleep(delay)
 
-    async def stream(self, cell_id, data: Dict[str, Any]) -> bool:
+    async def stream(self, data: Dict[str, Any], cell_id: Optional[str] = None) -> bool:
         """Stream encrypted data to target cell via WebSocket"""
         if not isinstance(self, Cell):
             raise ValueError("stream must be called from a Cell instance")
-        
+
         if not getattr(self, 'host', None):
             raise ValueError("host is required for Cell stream")
-        
+
         if not self._crypto:
             raise EncryptionError("Crypto manager not initialized")
+
+        if cell_id is None:
+            cell_id = self.host
 
         public_key_pem_str = await self._get_target_cell_public_key(cell_id)
         public_key_object = self._crypto.load_public_key_from_pem(public_key_pem_str)
