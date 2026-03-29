@@ -378,6 +378,132 @@ def disconnect_cell():
     except Exception as e:
         click.echo(f"Error:Error during local file cleanup: {e}")
 
+
+# Server Management Commands
+
+@click.command()
+@click.option('--server-dir', default=None, help='Path to neuronum-server directory (default: ~/neuronum-server)')
+def start_server(server_dir):
+    """Sets up and starts the Neuronum Server"""
+
+    # Determine server directory
+    if server_dir is None:
+        server_dir = SERVER_DIR
+    else:
+        server_dir = Path(server_dir)
+
+    # Check if neuronum-server exists, if not clone it
+    if not server_dir.exists():
+        click.echo("Neuronum Server not found. Cloning repository...")
+        try:
+            subprocess.run([
+                "git", "clone",
+                "https://github.com/neuronumcybernetics/neuronum-server.git",
+                str(server_dir)
+            ], check=True)
+            click.echo("Repository cloned successfully!")
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Error:Failed to clone repository: {e}")
+            return
+        except FileNotFoundError:
+            click.echo("Error:Git is not installed. Please install git first.")
+            return
+
+    # Check if Cell credentials exist
+    if not ENV_FILE.exists():
+        click.echo("Error:No Cell credentials found!")
+        click.echo("Please run 'neuronum create-cell' or 'neuronum connect-cell' first")
+        return
+
+    # Check if server is already running
+    server_pid_file = server_dir / ".server_pid"
+
+    if server_pid_file.exists():
+        try:
+            with open(server_pid_file, 'r') as f:
+                pid = int(f.read().strip())
+            # Check if process is actually running
+            os.kill(pid, 0)  # This will raise an exception if process doesn't exist
+            click.echo("Warning:Neuronum Server is already running!")
+            click.echo(f"View logs: tail -f {server_dir}/server.log")
+            click.echo(f"To restart, first run: neuronum stop-server")
+            return
+        except (OSError, ValueError, ProcessLookupError):
+            # Process is not running, clean up stale PID file
+            click.echo("Info: Cleaning up stale PID file...")
+            server_pid_file.unlink(missing_ok=True)
+
+    # Navigate to server directory and run setup script
+    click.echo(f"Starting Neuronum Server from {server_dir}...")
+
+    start_script = server_dir / "start_neuronum_server.sh"
+    if not start_script.exists():
+        click.echo(f"Error:Start script not found at {start_script}")
+        return
+
+    try:
+        # Make script executable
+        os.chmod(start_script, 0o755)
+
+        # Run the start script
+        result = subprocess.run(
+            ["bash", str(start_script)],
+            cwd=str(server_dir),
+            check=False
+        )
+
+        if result.returncode == 0:
+            click.echo("\nNeuronum Server started successfully!")
+            click.echo(f"View logs: tail -f {server_dir}/server.log")
+            click.echo("Stop server: neuronum stop-server")
+        else:
+            click.echo(f"\nWarning:Server start script exited with code {result.returncode}")
+
+    except Exception as e:
+        click.echo(f"Error:Error starting server: {e}")
+
+
+@click.command()
+@click.option('--server-dir', default=None, help='Path to neuronum-server directory (default: ~/neuronum-server)')
+def stop_server(server_dir):
+    """Stops the Neuronum Server"""
+
+    # Determine server directory
+    if server_dir is None:
+        server_dir = SERVER_DIR
+    else:
+        server_dir = Path(server_dir)
+
+    if not server_dir.exists():
+        click.echo(f"Error:Neuronum Server directory not found at {server_dir}")
+        return
+
+    stop_script = server_dir / "stop_neuronum_server.sh"
+    if not stop_script.exists():
+        click.echo(f"Error:Stop script not found at {stop_script}")
+        return
+
+    click.echo("Stopping Neuronum Server...")
+
+    try:
+        # Make script executable
+        os.chmod(stop_script, 0o755)
+
+        # Run the stop script (don't use check=True since stop script handles its own output)
+        result = subprocess.run(
+            ["bash", str(stop_script)],
+            cwd=str(server_dir),
+            check=False
+        )
+
+        if result.returncode == 0:
+            click.echo("Neuronum Server stopped successfully!")
+        else:
+            click.echo(f"Warning:Stop script exited with code {result.returncode}")
+
+    except Exception as e:
+        click.echo(f"Error:Unexpected error: {e}")
+
 # CLI Command Registration
 
 cli.add_command(create_cell)
@@ -385,6 +511,8 @@ cli.add_command(connect_cell)
 cli.add_command(view_cell)
 cli.add_command(delete_cell)
 cli.add_command(disconnect_cell)
+cli.add_command(start_server)
+cli.add_command(stop_server)
 
 if __name__ == "__main__":
     cli()
