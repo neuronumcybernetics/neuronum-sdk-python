@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='neuronum',
-    version = '2026.03.3',
+    version = '2026.04.1',
     author='Neuronum Cybernetics',
     author_email='welcome@neuronum.net',
     description='Neuronum SDK',
@@ -28,7 +28,8 @@ setup(
         'requests',
         'cryptography',
         'bip_utils',
-        'psutil'
+        'psutil',
+        'jinja2'
     ],
     entry_points={
         "console_scripts": [
