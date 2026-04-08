@@ -441,7 +441,7 @@ class BaseClient(ABC):
         
     async def tx_response(
         self,
-        transmitter_id: str,
+        tx_id: str,
         data: Dict[str, Any],
         client_public_key_str: str
     ) -> None:
@@ -452,14 +452,14 @@ class BaseClient(ABC):
         if not client_public_key_str:
             raise ValueError("client_public_key_str is required")
         
-        url = f"https://{self.network}/api/tx_response/{transmitter_id}"
+        url = f"https://{self.network}/api/tx_response/{tx_id}"
         
         public_key = self._crypto.load_public_key_from_pem(client_public_key_str)
         encrypted_payload = self._crypto.encrypt_with_ecdh_aesgcm(public_key, data)
         payload = {"data": encrypted_payload, "cell": self.to_dict()}
         
         await self._network_client.post_request(url, payload)
-        logger.info(f"Response sent to transmitter {transmitter_id}")
+        logger.info(f"Response sent to transmitter {tx_id}")
     
     async def activate_tx(
         self,
