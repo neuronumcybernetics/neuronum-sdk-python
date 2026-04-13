@@ -20,6 +20,15 @@
 </p>
 
 ---
+### 2026.04.1 - 04.3 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `cell.list_agents` list all agents on the network
+- `neuronum init-agent` initialize a new agent 
+- `neuronum update-agent` update your agent's agent.config file
+- `neuronum start-agent` start your agent.py file
+- `neuronum stop-agent` stop your agent.py file
+- `neuronum delete-agent` delete your agent
+
 ### 2026.03.1 / Not-Production Ready (in Testing)
 **Changes:**
 - `cell.sync` method to receive data packages

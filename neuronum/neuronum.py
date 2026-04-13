@@ -425,16 +425,16 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch cells: {e}")
             return []
         
-    async def list_apps(self) -> List[Dict[str, Any]]:
-        """List all available apps"""
+    async def list_agents(self) -> List[Dict[str, Any]]:
+        """List all available agents"""
 
-        full_url = f"https://{self.network}/api/list_apps"
+        full_url = f"https://{self.network}/api/list_agents"
         payload = {"cell": self.to_dict()}
         
         try:
             data = await self._network_client.post_request(full_url, payload)
-            apps = data.get("Apps", []) if data else []
-            return apps
+            agents = data.get("Agents", []) if data else []
+            return agents
         except NetworkError as e:
             logger.error(f"Failed to fetch cells: {e}")
             return []

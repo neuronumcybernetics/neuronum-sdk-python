@@ -23,11 +23,9 @@
 
 ### **About**
 
-Neuronum is an end-to-end encrypted data network for system-to-system communication. You use it to stream, request, and respond to data between AI agents, services, or devices across different servers.
+Neuronum is a data network enabling distributed AI agents to communicate securely across devices with built-in end-to-end encryption, identity, routing, and delivery by simple function calls.
 
-It handles encryption, identity, routing, and delivery automatically. You can focus on building your application instead of managing backend infrastructure.
-
-Whether you're connecting two AI agents, orchestrating a distributed system, or streaming sensor data from an IoT device, Neuronum gives you a simple API to move encrypted data between any two points.
+You focus on building your agent's logic. Neuronum handles the rest.
 
 > ⚠️ **Development Status:** The Neuronum SDK is currently in beta and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
 
@@ -40,7 +38,7 @@ Whether you're connecting two AI agents, orchestrating a distributed system, or 
 
 ### **Installation**
 
-Setup and activate a virtual environment:
+Set up and activate a virtual environment:
 ```sh
 python3 -m venv ~/neuronum-venv
 source ~/neuronum-venv/bin/activate
@@ -57,7 +55,10 @@ pip install neuronum
 
 ### **Cell**
 
-A Cell is your unique identity on the Neuronum network. Every participant, whether an agent, a service, or a device is a Cell. Cells are addresses you can send data to on the network.
+A Cell is your unique identity used to send and receive data on the Neuronum network. You can think of it like a digital address.
+
+Example ID: 
+crOEhJT_zGG_6uobBDNX9knNhMNQp4YQtVXTRgziCNg::cell
 
 **Create a Cell:**
 ```sh
@@ -87,15 +88,103 @@ neuronum delete-cell
 
 ------------------
 
+### **Agent**
+
+An Agent is any (AI) service that you build upon your Cell, exposing skills that other agents/cells can discover and call. Each agent has its own configuration, handles, and logic.
+
+**Initialize a new Agent:**
+```sh
+neuronum init-agent
+```
+This creates an agent folder named agent_*agent_id* with `agent.py`, `model.py`, and `agent.config`.
+
+**agent.config** (inspired by Google's A2A protocol Agent Card)**:**
+```json
+{
+  "agent_meta": {
+    "agent_id": "019d8671-22c8-7a91-9fa7-8eb46d85969b",
+    "version": "1.0.0",
+    "name": "Q&A Agent",
+    "description": "An agent that returns answers to natural language prompts",
+    "audience": "private",
+    "logo": "https://neuronum.net/static/logo_new.png"
+  },
+  "skills": [
+    {
+      "handle": "get_answer",
+      "description": "Ask a question and get an answer.",
+      "examples": [
+        "What is the capital of France?",
+        "Explain quantum mechanics simply."
+      ],
+      "stream": false,
+      "input_schema": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The user request"
+          },
+          "context": {
+            "type": "string",
+            "description": "Optional background information"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ],
+  "legals": {
+    "terms": "https://url_to_your/legals",
+    "privacy_policy": "https://url_to_your/legals"
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `agent_meta.agent_id` | Auto-generated. Do not change |
+| `agent_meta.version` | Version of your agent. Update as needed |
+| `agent_meta.name` | Display name of your agent |
+| `agent_meta.description` | What your agent does |
+| `agent_meta.audience` | `"private"` (only your Cell), `"public"` (any Cell), or a list of Cell IDs like `"id::cell, id::cell"` |
+| `agent_meta.logo` | URL to your agent's logo |
+| `skills` | List of skills your agent exposes. Add, remove, or modify as needed |
+| `skills[].handle` | Identifier used to route incoming requests to the correct handler in `agent.py` |
+| `skills[].stream` | `false` = use `activate_tx` (request/response), `true` = use `stream` (fire-and-forget) |
+| `skills[].description` | What the skill does |
+| `skills[].examples` | Example prompts or inputs |
+| `skills[].input_schema` | JSON Schema defining the expected input fields |
+| `legals` | Links to your terms of service and privacy policy |
+
+**Start your Agent:**
+```sh
+neuronum start-agent
+```
+
+**Stop your Agent:**
+```sh
+neuronum stop-agent
+```
+
+**Update your Agent** after changing an agent.config file:
+```sh
+neuronum update-agent
+```
+
+------------------
+
 ### **Methods**
 
-Cells interact using five methods:
+Cells interact using six methods:
 
 | Method | Description |
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
-| `stream(data, cell_id)` | Send data to a Cell (fire-and-forget). Defaults to own Cell |
-| `activate_tx(data, cell_id)` | Send a request and wait for a response. Defaults to own Cell |
+| `list_agents()` | List all Agents built on Neuronum |
+| `stream(data, cell_id)` | Send data to a Cell (fire-and-forget) |
+| `activate_tx(data, cell_id)` | Send a request and wait for a response |
 | `sync()` | Listen for incoming transmissions |
 | `tx_response(tx_id, data, public_key)` | Send an encrypted response back |
 
@@ -116,6 +205,19 @@ async def main():
     async with Cell() as cell:
         cells = await cell.list_cells()
         print(cells)
+
+asyncio.run(main())
+```
+
+**List Agents**
+```python
+import asyncio
+from neuronum import Cell
+
+async def main():
+    async with Cell() as cell:
+        agents = await cell.list_agents()
+        print(agents)
 
 asyncio.run(main())
 ```

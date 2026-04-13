@@ -380,6 +380,461 @@ def disconnect_cell():
         click.echo(f"Error:Error during local file cleanup: {e}")
 
 
+# App Management Commands
+
+@click.command()
+def init_agent():
+    asyncio.run(async_init_agent())
+
+async def async_init_agent():
+    """Initialize a new agent by registering it with the Neuronum network and creating local files."""
+    credentials = load_credentials()
+    if not credentials:
+        return
+
+    host = credentials['host']
+    private_key = credentials['private_key']
+
+    # Prepare signed message for API authentication
+    timestamp = str(int(time.time()))
+    message = f"host={host};timestamp={timestamp}"
+    signature_b64 = sign_message(private_key, message.encode())
+
+    if not signature_b64:
+        return
+
+    url = f"{API_BASE_URL}/init_agent"
+    payload = {
+        "host": host,
+        "signed_message": signature_b64,
+        "message": message
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        agent_id = response.json().get("agent_id", False)
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error:Error communicating with the server: {e}")
+        return
+    
+    agent_folder = "agent_" + agent_id
+    project_path = Path(agent_folder)
+    project_path.mkdir(exist_ok=True)
+                                                                                                           
+    agent_path = project_path / "agent.py"
+    agent_path.write_text('''\
+import os
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+import asyncio
+import json
+import sys
+from neuronum import Cell
+from model import get_model
+import logging
+
+
+# Logging Setup
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+file_handler = logging.FileHandler("agent.log", mode='a')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+# Load app config
+with open("agent.config", "r") as f:
+    app_config = json.load(f)
+
+
+async def setup_cell_connection():
+    """Establish connection as Neuronum Cell and return cell instance"""
+    cell = Cell()
+
+    if not cell.env.get("HOST"):
+        logging.error("Error: No HOST found in Cell credentials. Please run 'neuronum create-cell' or 'neuronum connect-cell' first.")
+        await cell.close()
+        sys.exit(1)
+
+    logging.info(f"Connected to Cell: {cell.env.get('HOST')}")
+    return cell
+
+
+async def send_cell_response(cell, tx_id: str, data: dict, public_key: str):
+    """Send response back through cell"""
+    await cell.tx_response(
+        tx_id=tx_id,
+        data=data,
+        client_public_key_str=public_key
+    )
+
+
+async def handle_get_answer(cell, transmitter: dict):
+    """Handle a question and return an answer"""
+    data = transmitter.get("data", {})
+    query = data.get("query", "")
+    context = data.get("context", "")
+    logging.info(f"Received question: {query}")
+
+    llm = get_model()
+    messages = [{"role": "user", "content": query}]
+    if context:
+        messages.insert(0, {"role": "system", "content": context})
+    result = llm.create_chat_completion(messages=messages)
+    answer = result["choices"][0]["message"]["content"]
+
+    await send_cell_response(
+        cell,
+        transmitter.get("tx_id"),
+        {"json": {"answer": answer}},
+        data.get("public_key", "")
+    )
+
+
+def is_authorized(sender: str, server_host: str) -> bool:
+    """Check if sender is authorized based on agent.config audience setting."""
+    audience = app_config.get("agent_meta", {}).get("audience", "private")
+
+    if audience == "public":
+        return True
+
+    if audience == "private":
+        return sender == server_host
+
+    allowed_cells = [c.strip() for c in audience.split(",")]
+    return sender in allowed_cells
+
+
+async def route_message(cell, transmitter: dict):
+    """Route incoming messages to appropriate handlers with access control"""
+    try:
+        data = transmitter.get("data", {})
+        message_type = data.get("type", None)
+        sender = transmitter.get("sender", "")
+        server_host = cell.host or cell.env.get("HOST", "")
+
+        # Check if this message is intended for this agent
+        agent_id = data.get("agent_id", None)
+        my_agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
+        if agent_id and agent_id != my_agent_id:
+            return
+
+        if not is_authorized(sender, server_host):
+            logging.warning(f"Access denied: '{sender}' is not authorized")
+            await send_cell_response(
+                cell,
+                transmitter.get("tx_id"),
+                {"json": "Access denied: This endpoint is not available."},
+                data.get("public_key", "")
+            )
+            return
+
+        handlers = {
+            "get_answer": lambda: handle_get_answer(cell, transmitter),
+        }
+
+        handler = handlers.get(message_type)
+        if handler:
+            await handler()
+        else:
+            logging.warning(f"Unknown message type: {message_type}")
+    except Exception as e:
+        logging.error(f"Error routing message: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
+
+
+async def main():
+    cell = None
+    try:
+        logging.info("Connecting to Neuronum network...")
+        cell = await setup_cell_connection()
+        logging.info(f"Connected as Cell: {cell.env.get('HOST') or cell.host}")
+
+        async for transmitter in cell.sync():
+            await route_message(cell, transmitter)
+    finally:
+        if cell is not None:
+            await cell.close()
+            logging.info("Cell connection closed successfully")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+''')
+    
+    model_path = project_path / "model.py"
+    model_path.write_text('''\
+# !pip install llama-cpp-python
+
+from llama_cpp import Llama
+
+REPO_ID = "Qwen/Qwen2.5-3B-Instruct-GGUF"
+FILENAME = "qwen2.5-3b-instruct-q4_k_m.gguf"
+
+_llm = None
+
+def get_model():
+    global _llm
+    if _llm is None:
+        print(f"Loading model {REPO_ID}...")
+        _llm = Llama.from_pretrained(
+            repo_id=REPO_ID,
+            filename=FILENAME,
+            n_gpu_layers=-1,
+            n_ctx=2048,
+        )
+        print("Model loaded.")
+    return _llm
+
+if __name__ == "__main__":
+    get_model()
+    print("Model downloaded and ready.")
+''')
+
+    config_path = project_path / "agent.config"
+    config_data = json.dumps({
+        "agent_meta": {
+            "agent_id": agent_id,
+            "version": "1.0.0",
+            "name": "Q&A Agent",
+            "description": "An agent that returns answers to natural language prompts",
+            "audience": "private",
+            "logo": "https://neuronum.net/static/logo_new.png"
+        },
+        "skills": [
+        {
+            "handle": "get_answer",
+            "description": "Ask a question and get an answer.",
+            "examples": [
+                "What is the capital of France?",
+                "Explain quantum mechanics simply."
+            ],
+            "stream": False,
+            "input_schema": {
+                "properties": {
+                    "query": { 
+                        "type": "string",
+                        "description": "The user request"
+                    },
+                    "context": { 
+                        "type": "string",
+                        "description": "Optional background information"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+        ],
+        "legals": {
+            "terms": "https://url_to_your/legals",
+            "privacy_policy": "https://url_to_your/legals"
+        }
+    }, indent=2)
+    config_path.write_text(config_data + "\n")
+    
+    click.echo(f"Agent '{agent_id}' initialized!")
+
+
+@click.command()
+def update_agent():
+    try:
+        with open("agent.config", "r") as f:
+            config_data = json.load(f)
+
+        audience = config_data.get("agent_meta", {}).get("audience", "")
+        agent_id = config_data.get("agent_meta", {}).get("agent_id", "")
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: File not found - {e.filename}")
+        return
+    except click.ClickException as e:
+        click.echo(e.format_message())
+        return
+    except Exception as e:
+        click.echo(f"Error reading files: {e}")
+        return
+
+    asyncio.run(async_update_agent(config_data, agent_id, audience))
+
+
+async def async_update_agent(config_data, agent_id: str, audience: str):
+    """Update agent configuration on the Neuronum network."""
+    credentials = load_credentials()
+    if not credentials:
+        return
+
+    host = credentials['host']
+    private_key = credentials['private_key']
+
+    # Prepare signed message for API authentication
+    timestamp = str(int(time.time()))
+    message = f"host={host};timestamp={timestamp}"
+    signature_b64 = sign_message(private_key, message.encode())
+
+    if not signature_b64:
+        return
+
+    url = f"{API_BASE_URL}/update_agent"
+    payload = {
+        "host": host,
+        "signed_message": signature_b64,
+        "message": message,
+        "agent_id": agent_id,
+        "config": config_data,
+        "audience": audience
+    }
+
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
+        
+        response_data = response.json()
+        
+        if response_data.get("success"):
+            agent_id = response_data.get("agent_id")
+            message = response_data.get("message", "Agent updated!")
+            click.echo(f"Agent '{agent_id}' updated successfully!")
+        else:
+            error_message = response_data.get("message", "Unknown error")
+            click.echo(f"Error:Failed to update app: {error_message}")
+            
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error:Error communicating with the server: {e}")
+        return
+
+                   
+
+@click.command()
+def delete_agent():
+    try:
+        with open("agent.config", "r") as f:
+            config_data = json.load(f)
+
+        agent_id = config_data.get("agent_meta", {}).get("agent_id", "")
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: File not found - {e.filename}")
+        return
+    except click.ClickException as e:
+        click.echo(e.format_message())
+        return
+    except Exception as e:
+        click.echo(f"Error reading files: {e}")
+        return
+
+    # 1. Load Credentials
+    credentials = load_credentials()
+    if not credentials:
+        # Error already echoed in helper
+        return
+
+    host = credentials['host']
+    private_key = credentials['private_key']
+
+    # Confirm deletion
+    confirm = click.confirm(f"Are you sure you want to permanently delete your Neuronum Agent '{agent_id}'?", default=False)
+    if not confirm:
+        click.echo("Deletion canceled.")
+        return
+
+    # Prepare signed message for API authentication
+    timestamp = str(int(time.time()))
+    message = f"host={host};timestamp={timestamp}"
+    signature_b64 = sign_message(private_key, message.encode())
+
+    if not signature_b64:
+        return
+
+    # Send deletion request to API
+    click.echo(f"Requesting deletion of Agent '{agent_id}'...")
+    url = f"{API_BASE_URL}/delete_agent"
+    payload = {
+        "host": host,
+        "signed_message": signature_b64,
+        "message": message,
+        "agent_id": agent_id
+    }
+
+    try:
+        response = requests.delete(url, json=payload, timeout=10)
+        response.raise_for_status()
+        status = response.json().get("status", False)
+        if status:
+            click.echo(f"Agent '{agent_id}' has been deleted!")
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error:Error communicating with the server during deletion: {e}")
+        return
+
+# Server Management Commands
+
+@click.command()
+def start_agent():
+    """Starts the agent server in the current directory"""
+    agent_path = Path("agent.py")
+    if not agent_path.exists():
+        click.echo("Error: agent.py not found. Run this command from inside your agent folder.")
+        return
+
+    pid_file = Path(".agent_pid")
+
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text().strip())
+            os.kill(pid, 0)
+            click.echo("Server is already running!")
+            click.echo("View logs: tail -f agent.log")
+            click.echo("To restart, first run: neuronum stop-agent")
+            return
+        except (OSError, ValueError, ProcessLookupError):
+            pid_file.unlink(missing_ok=True)
+
+    if Path("model.py").exists():
+        click.echo("Checking model...")
+        try:
+            subprocess.run([sys.executable, "model.py"], check=True)
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Error downloading model: {e}")
+            return
+
+    click.echo("Starting server...")
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "agent.py"],
+            stdout=open("agent.log", "a"),
+            stderr=subprocess.STDOUT,
+            start_new_session=True
+        )
+        pid_file.write_text(str(process.pid))
+        click.echo(f"Server started (PID: {process.pid})")
+        click.echo("View logs: tail -f agent.log")
+        click.echo("Stop server: neuronum stop-agent")
+    except Exception as e:
+        click.echo(f"Error starting server: {e}")
+
+
+@click.command()
+def stop_agent():
+    """Stops the agent server in the current directory"""
+    pid_file = Path(".agent_pid")
+
+    if not pid_file.exists():
+        click.echo("No running server found in this directory.")
+        return
+
+    try:
+        pid = int(pid_file.read_text().strip())
+        os.kill(pid, signal.SIGTERM)
+        click.echo(f"Server stopped (PID: {pid})")
+    except ProcessLookupError:
+        click.echo("Server process was not running.")
+    except Exception as e:
+        click.echo(f"Error stopping server: {e}")
+    finally:
+        pid_file.unlink(missing_ok=True)
+
 # CLI Command Registration
 
 cli.add_command(create_cell)
@@ -387,6 +842,11 @@ cli.add_command(connect_cell)
 cli.add_command(view_cell)
 cli.add_command(delete_cell)
 cli.add_command(disconnect_cell)
+cli.add_command(init_agent)
+cli.add_command(update_agent)
+cli.add_command(delete_agent)
+cli.add_command(start_agent)
+cli.add_command(stop_agent)
 
 if __name__ == "__main__":
     cli()
