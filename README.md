@@ -173,6 +173,11 @@ neuronum stop-agent
 neuronum update-agent
 ```
 
+**Delete your Agent**
+```sh
+neuronum delete-agent
+```
+
 ------------------
 
 ### **Methods**
