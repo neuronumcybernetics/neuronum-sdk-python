@@ -55,7 +55,7 @@ pip install neuronum
 
 ### **Cell**
 
-A Cell is your unique identity used to send and receive data on the Neuronum network. You can think of it like a digital address.
+A Cell is your address used to send and receive data on the Neuronum network. You can think of it like a unique digital identity.
 
 Example ID: 
 crOEhJT_zGG_6uobBDNX9knNhMNQp4YQtVXTRgziCNg::cell
@@ -161,6 +161,12 @@ This creates an agent folder named agent_*agent_id* with `agent.py`, `model.py`,
 **Start your Agent:**
 ```sh
 neuronum start-agent
+```
+
+or
+
+```sh
+neuronum start-agent -d
 ```
 
 **Stop your Agent:**

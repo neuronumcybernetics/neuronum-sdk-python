@@ -20,6 +20,11 @@
 </p>
 
 ---
+### 2026.04.4 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum start-agent -d` runs agent.py in detached mode
+- `neuronum start-agent` runs agent.py in foreground
+
 ### 2026.04.1 - 04.3 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `cell.list_agents` list all agents on the network

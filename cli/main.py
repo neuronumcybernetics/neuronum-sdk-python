@@ -771,48 +771,65 @@ def delete_agent():
 # Server Management Commands
 
 @click.command()
-def start_agent():
-    """Starts the agent server in the current directory"""
+@click.option("-d", "--detach", is_flag=True, default=False, help="Run agent in background (daemon mode)")
+def start_agent(detach):
+    """Starts the agent in the current directory. Use -d to run in the background."""
     agent_path = Path("agent.py")
     if not agent_path.exists():
         click.echo("Error: agent.py not found. Run this command from inside your agent folder.")
         return
 
-    pid_file = Path(".agent_pid")
+    if detach:
+        pid_file = Path(".agent_pid")
 
-    if pid_file.exists():
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text().strip())
+                os.kill(pid, 0)
+                click.echo("Server is already running!")
+                click.echo("View logs: tail -f agent.log")
+                click.echo("To restart, first run: neuronum stop-agent")
+                return
+            except (OSError, ValueError, ProcessLookupError):
+                pid_file.unlink(missing_ok=True)
+
+        if Path("model.py").exists():
+            click.echo("Checking model...")
+            try:
+                subprocess.run([sys.executable, "model.py"], check=True)
+            except subprocess.CalledProcessError as e:
+                click.echo(f"Error downloading model: {e}")
+                return
+
+        click.echo("Starting server in background...")
         try:
-            pid = int(pid_file.read_text().strip())
-            os.kill(pid, 0)
-            click.echo("Server is already running!")
+            process = subprocess.Popen(
+                [sys.executable, "agent.py"],
+                stdout=open("agent.log", "a"),
+                stderr=subprocess.STDOUT,
+                start_new_session=True
+            )
+            pid_file.write_text(str(process.pid))
+            click.echo(f"Server started (PID: {process.pid})")
             click.echo("View logs: tail -f agent.log")
-            click.echo("To restart, first run: neuronum stop-agent")
-            return
-        except (OSError, ValueError, ProcessLookupError):
-            pid_file.unlink(missing_ok=True)
+            click.echo("Stop server: neuronum stop-agent")
+        except Exception as e:
+            click.echo(f"Error starting server: {e}")
+    else:
+        if Path("model.py").exists():
+            click.echo("Checking model...")
+            try:
+                subprocess.run([sys.executable, "model.py"], check=True)
+            except subprocess.CalledProcessError as e:
+                click.echo(f"Error downloading model: {e}")
+                return
 
-    if Path("model.py").exists():
-        click.echo("Checking model...")
         try:
-            subprocess.run([sys.executable, "model.py"], check=True)
-        except subprocess.CalledProcessError as e:
-            click.echo(f"Error downloading model: {e}")
-            return
-
-    click.echo("Starting server...")
-    try:
-        process = subprocess.Popen(
-            [sys.executable, "agent.py"],
-            stdout=open("agent.log", "a"),
-            stderr=subprocess.STDOUT,
-            start_new_session=True
-        )
-        pid_file.write_text(str(process.pid))
-        click.echo(f"Server started (PID: {process.pid})")
-        click.echo("View logs: tail -f agent.log")
-        click.echo("Stop server: neuronum stop-agent")
-    except Exception as e:
-        click.echo(f"Error starting server: {e}")
+            subprocess.run([sys.executable, "agent.py"])
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            click.echo(f"Error starting agent: {e}")
 
 
 @click.command()
