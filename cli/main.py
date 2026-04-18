@@ -152,7 +152,14 @@ def cli():
 def create_cell():
     """Creates a new Community Cell with a freshly generated 12-word mnemonic."""
 
-    click.echo("Creating a new Community Cell...")
+    click.echo("By creating a Cell, you agree to the Neuronum Terms of Service.")
+    click.echo("Read them at: https://neuronum.net/legals")
+    accepted = questionary.confirm("Do you accept the Terms of Service?").ask()
+    if not accepted:
+        click.echo("You must accept the Terms of Service to create a Cell.")
+        return
+
+    click.echo("\nCreating a new Community Cell...")
     click.echo("Warning:Save your mnemonic in a secure location! You'll need it to access your Cell.\n")
 
     # 1. Generate a new 12-word mnemonic

@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.04.5 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum create-cell` requires acceptance of Terms of Service before cell creation
+
 ### 2026.04.4 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum start-agent -d` runs agent.py in detached mode
