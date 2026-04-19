@@ -20,6 +20,11 @@
 </p>
 
 ---
+### 2026.04.6 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum init-agent` restructured agent.py boilerplate
+
+
 ### 2026.04.5 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum create-cell` requires acceptance of Terms of Service before cell creation

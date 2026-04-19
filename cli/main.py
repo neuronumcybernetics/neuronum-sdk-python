@@ -436,54 +436,41 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import asyncio
 import json
-import sys
+import logging
 from neuronum import Cell
 from model import get_model
-import logging
 
 
-# Logging Setup
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# ── Setup ────────────────────────────────────────────────────────────────────
 
-file_handler = logging.FileHandler("agent.log", mode='a')
-file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
+logging.basicConfig(filename="agent.log", level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Load app config
 with open("agent.config", "r") as f:
     app_config = json.load(f)
 
 
-async def setup_cell_connection():
-    """Establish connection as Neuronum Cell and return cell instance"""
-    cell = Cell()
+# ── Auth ─────────────────────────────────────────────────────────────────────
 
-    if not cell.env.get("HOST"):
-        logging.error("Error: No HOST found in Cell credentials. Please run 'neuronum create-cell' or 'neuronum connect-cell' first.")
-        await cell.close()
-        sys.exit(1)
+def is_authorized(sender: str, server_host: str, agent_id: str) -> bool:
+    my_agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
+    if agent_id and agent_id != my_agent_id:
+        return False
 
-    logging.info(f"Connected to Cell: {cell.env.get('HOST')}")
-    return cell
-
-
-async def send_cell_response(cell, tx_id: str, data: dict, public_key: str):
-    """Send response back through cell"""
-    await cell.tx_response(
-        tx_id=tx_id,
-        data=data,
-        client_public_key_str=public_key
-    )
+    audience = app_config.get("agent_meta", {}).get("audience", "private")
+    if audience == "public":
+        return True
+    if audience == "private":
+        return sender == server_host
+    allowed_cells = [c.strip() for c in audience.split(",")]
+    return sender in allowed_cells
 
 
-async def handle_get_answer(cell, transmitter: dict):
-    """Handle a question and return an answer"""
-    data = transmitter.get("data", {})
+# ── Handlers ─────────────────────────────────────────────────────────────────
+
+async def handle_get_answer(cell, tx: dict):
+    data = tx.get("data", {})
     query = data.get("query", "")
     context = data.get("context", "")
-    logging.info(f"Received question: {query}")
 
     llm = get_model()
     messages = [{"role": "user", "content": query}]
@@ -492,80 +479,48 @@ async def handle_get_answer(cell, transmitter: dict):
     result = llm.create_chat_completion(messages=messages)
     answer = result["choices"][0]["message"]["content"]
 
-    await send_cell_response(
-        cell,
-        transmitter.get("tx_id"),
-        {"json": {"answer": answer}},
-        data.get("public_key", "")
+    await cell.tx_response(
+        tx_id=tx.get("tx_id"),
+        data={"json": {"answer": answer}},
+        client_public_key_str=data.get("public_key", "")
     )
 
 
-def is_authorized(sender: str, server_host: str) -> bool:
-    """Check if sender is authorized based on agent.config audience setting."""
-    audience = app_config.get("agent_meta", {}).get("audience", "private")
+# ── Agent ─────────────────────────────────────────────────────────────────────
 
-    if audience == "public":
-        return True
+async def start_agent(cell):
+    async for tx in cell.sync():
+        try:
+            data = tx.get("data", {})
+            handle = data.get("handle", None)
+            sender = tx.get("sender", "")
+            server_host = cell.host or cell.env.get("HOST", "")
+            agent_id = data.get("agent_id", "")
 
-    if audience == "private":
-        return sender == server_host
+            if not is_authorized(sender, server_host, agent_id):
+                logging.warning(f"Access denied: \'{sender}\' is not authorized")
+                await cell.tx_response(
+                    tx_id=tx.get("tx_id"),
+                    data={"json": "Access denied: This endpoint is not available."},
+                    client_public_key_str=data.get("public_key", "")
+                )
+                continue
 
-    allowed_cells = [c.strip() for c in audience.split(",")]
-    return sender in allowed_cells
+            handlers = {
+                "get_answer": lambda: handle_get_answer(cell, tx),
+            }
 
+            handler = handlers.get(handle)
+            if handler:
+                await handler()
 
-async def route_message(cell, transmitter: dict):
-    """Route incoming messages to appropriate handlers with access control"""
-    try:
-        data = transmitter.get("data", {})
-        message_type = data.get("type", None)
-        sender = transmitter.get("sender", "")
-        server_host = cell.host or cell.env.get("HOST", "")
-
-        # Check if this message is intended for this agent
-        agent_id = data.get("agent_id", None)
-        my_agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
-        if agent_id and agent_id != my_agent_id:
-            return
-
-        if not is_authorized(sender, server_host):
-            logging.warning(f"Access denied: '{sender}' is not authorized")
-            await send_cell_response(
-                cell,
-                transmitter.get("tx_id"),
-                {"json": "Access denied: This endpoint is not available."},
-                data.get("public_key", "")
-            )
-            return
-
-        handlers = {
-            "get_answer": lambda: handle_get_answer(cell, transmitter),
-        }
-
-        handler = handlers.get(message_type)
-        if handler:
-            await handler()
-        else:
-            logging.warning(f"Unknown message type: {message_type}")
-    except Exception as e:
-        logging.error(f"Error routing message: {e}")
-        import traceback
-        logging.error(traceback.format_exc())
+        except Exception as e:
+            logging.error(f"Error: {e}")
 
 
 async def main():
-    cell = None
-    try:
-        logging.info("Connecting to Neuronum network...")
-        cell = await setup_cell_connection()
-        logging.info(f"Connected as Cell: {cell.env.get('HOST') or cell.host}")
-
-        async for transmitter in cell.sync():
-            await route_message(cell, transmitter)
-    finally:
-        if cell is not None:
-            await cell.close()
-            logging.info("Cell connection closed successfully")
+    async with Cell() as cell:
+        await start_agent(cell)
 
 
 if __name__ == "__main__":
