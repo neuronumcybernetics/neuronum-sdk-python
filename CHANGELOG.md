@@ -20,6 +20,11 @@
 </p>
 
 ---
+### 2026.04.7 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum init-agent` new file "agent.html" in boilerplate folder
+- `neuronum init-agent` new handle "get_ui" in agent.py
+
 ### 2026.04.6 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum init-agent` restructured agent.py boilerplate

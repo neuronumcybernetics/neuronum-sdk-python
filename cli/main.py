@@ -439,11 +439,14 @@ import json
 import logging
 from neuronum import Cell
 from model import get_model
+from jinja2 import Environment, FileSystemLoader
 
 
 # ── Setup ────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(filename="agent.log", level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+
+template_env = Environment(loader=FileSystemLoader(os.path.dirname(os.path.abspath(__file__))))
 
 with open("agent.config", "r") as f:
     app_config = json.load(f)
@@ -486,6 +489,19 @@ async def handle_get_answer(cell, tx: dict):
     )
 
 
+async def handle_get_ui(cell, tx: dict):
+    data = tx.get("data", {})
+
+    template = template_env.get_template("agent.html")
+    html = template.render()
+
+    await cell.tx_response(
+        tx_id=tx.get("tx_id"),
+        data={"html": html},
+        client_public_key_str=data.get("public_key", "")
+    )
+
+
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
 async def start_agent(cell):
@@ -508,6 +524,7 @@ async def start_agent(cell):
 
             handlers = {
                 "get_answer": lambda: handle_get_answer(cell, tx),
+                "get_ui": lambda: handle_get_ui(cell, tx),
             }
 
             handler = handlers.get(handle)
@@ -526,7 +543,277 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 ''')
-    
+
+    html_path = project_path / "agent.html"
+    html_path.write_text('''\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Q&A Agent</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #040404;
+      font-family: \'Inter\', sans-serif;
+      color: white;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .header-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .header-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .header-status {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.35);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .status-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #4ade80;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      scrollbar-width: none;
+    }
+
+    .messages::-webkit-scrollbar { display: none; }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 85%;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .message.agent {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .message-bubble {
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .message.user .message-bubble {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.9);
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.agent .message-bubble {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      color: rgba(255, 255, 255, 0.8);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message.agent .message-bubble.thinking {
+      color: rgba(255, 255, 255, 0.3);
+      font-style: italic;
+    }
+
+    .input-row {
+      padding: 12px 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    .input-wrap {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      transition: border-color 0.2s;
+    }
+
+    .input-wrap:focus-within {
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 13px;
+      font-family: \'Inter\', sans-serif;
+      resize: none;
+      padding: 10px 0;
+      max-height: 120px;
+      line-height: 1.5;
+      scrollbar-width: none;
+    }
+
+    textarea::-webkit-scrollbar { display: none; }
+    textarea::placeholder { color: rgba(255, 255, 255, 0.25); }
+
+    .send-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.14);
+      color: rgba(255, 255, 255, 0.95);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-info">
+      <div class="header-name">Q&amp;A Agent</div>
+      <div class="header-status">
+        <div class="status-dot"></div>
+        <span>Ready</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="messages" id="messages"></div>
+
+  <div class="input-row">
+    <div class="input-wrap">
+      <textarea id="input" placeholder="Ask anything..." rows="1"></textarea>
+    </div>
+    <button class="send-btn" id="send-btn" title="Send">&#x27A4;</button>
+  </div>
+
+<script>
+  const messagesEl = document.getElementById(\'messages\');
+  const inputEl = document.getElementById(\'input\');
+  const sendBtn = document.getElementById(\'send-btn\');
+
+  function addMessage(role, text, thinking = false) {
+    const msg = document.createElement(\'div\');
+    msg.className = `message ${role}`;
+    const bubble = document.createElement(\'div\');
+    bubble.className = `message-bubble${thinking ? \' thinking\' : \'\'}`;
+    bubble.textContent = text;
+    msg.appendChild(bubble);
+    messagesEl.appendChild(msg);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return bubble;
+  }
+
+  async function send() {
+    const query = inputEl.value.trim();
+    if (!query) return;
+
+    inputEl.value = \'\';
+    inputEl.style.height = \'auto\';
+    sendBtn.disabled = true;
+
+    addMessage(\'user\', query);
+    const thinkingBubble = addMessage(\'agent\', \'Thinking...\', true);
+
+    try {
+      const payload = JSON.stringify({ handle: \'get_answer\', query });
+      const result = await window.parent.pywebview.api.console_activate_tx(payload, "neuronum.net::cell");
+
+      const answer = result?.data?.json?.answer
+        || result?.json?.answer
+        || result?.answer
+        || JSON.stringify(result);
+
+      thinkingBubble.classList.remove(\'thinking\');
+      thinkingBubble.textContent = answer;
+    } catch (e) {
+      thinkingBubble.classList.remove(\'thinking\');
+      thinkingBubble.textContent = `Error: ${e.message || e}`;
+    } finally {
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  sendBtn.addEventListener(\'click\', send);
+
+  inputEl.addEventListener(\'keydown\', (e) => {
+    if (e.key === \'Enter\' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+
+  inputEl.addEventListener(\'input\', () => {
+    inputEl.style.height = \'auto\';
+    inputEl.style.height = inputEl.scrollHeight + \'px\';
+  });
+</script>
+
+</body>
+</html>
+''')
+
     model_path = project_path / "model.py"
     model_path.write_text('''\
 # !pip install llama-cpp-python
@@ -577,11 +864,11 @@ if __name__ == "__main__":
             "stream": False,
             "input_schema": {
                 "properties": {
-                    "query": { 
+                    "query": {
                         "type": "string",
                         "description": "The user request"
                     },
-                    "context": { 
+                    "context": {
                         "type": "string",
                         "description": "Optional background information"
                     }
