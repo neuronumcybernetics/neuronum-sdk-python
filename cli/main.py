@@ -456,7 +456,7 @@ with open("agent.config", "r") as f:
 
 def is_authorized(sender: str, server_host: str, agent_id: str) -> bool:
     my_agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
-    if agent_id and agent_id != my_agent_id:
+    if not agent_id or agent_id != my_agent_id:
         return False
 
     audience = app_config.get("agent_meta", {}).get("audience", "private")
@@ -493,7 +493,9 @@ async def handle_get_ui(cell, tx: dict):
     data = tx.get("data", {})
 
     template = template_env.get_template("agent.html")
-    html = template.render()
+    host = cell.host or cell.env.get("HOST", "")
+    agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
+    html = template.render(host=host, agent_id=agent_id)
 
     await cell.tx_response(
         tx_id=tx.get("tx_id"),
@@ -776,8 +778,8 @@ if __name__ == "__main__":
     const thinkingBubble = addMessage(\'agent\', \'Thinking...\', true);
 
     try {
-      const payload = JSON.stringify({ handle: \'get_answer\', query });
-      const result = await window.parent.pywebview.api.console_activate_tx(payload, "neuronum.net::cell");
+      const payload = JSON.stringify({ handle: \'get_answer\', query, agent_id: \'{{ agent_id }}\' });
+      const result = await window.parent.pywebview.api.console_activate_tx(payload, "{{ host }}");
 
       const answer = result?.data?.json?.answer
         || result?.json?.answer
