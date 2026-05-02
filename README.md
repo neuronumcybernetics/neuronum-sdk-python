@@ -23,7 +23,7 @@
 
 ### **About**
 
-Neuronum is a data network enabling distributed AI agents to communicate securely across devices with built-in end-to-end encryption, identity, routing, and delivery by simple function calls.
+Neuronum is a private data network that enables distributed AI agents to connect and communicate securely across devices with built-in end-to-end encryption, identity, routing, data mapping and delivery by simple function calls.
 
 You focus on building your agent's logic. Neuronum handles the rest.
 
@@ -57,8 +57,9 @@ pip install neuronum
 
 A Cell is your address used to send and receive data on the Neuronum network. You can think of it like a unique digital identity.
 
-Example ID: 
-crOEhJT_zGG_6uobBDNX9knNhMNQp4YQtVXTRgziCNg::cell
+Example IDs: 
+acme.com::cell 
+johndoe@acme.com::cell 
 
 **Create a Cell:**
 ```sh
@@ -66,7 +67,7 @@ neuronum create-cell
 ```
 This generates your Cell ID, public/private key pair, and a 12-word mnemonic recovery phrase. Your Cell credentials are stored locally at `~/.neuronum/.env`.
 
-**Connect an existing Cell** to a new device using your 12-word mnemonic:
+**Connect your Cell** to a device using your 12-word mnemonic:
 ```sh
 neuronum connect-cell
 ```

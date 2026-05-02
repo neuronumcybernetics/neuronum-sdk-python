@@ -119,6 +119,7 @@ def load_credentials():
 
         credentials['host'] = credentials.get("HOST")
         credentials['mnemonic'] = credentials.get("MNEMONIC")
+        credentials['type'] = credentials.get("TYPE")
         
         # Load Private Key
         with open(PRIVATE_KEY_FILE, "rb") as key_file:
@@ -143,71 +144,107 @@ def load_credentials():
 
 @click.group()
 def cli():
-    """Neuronum CLI App for Community Cell management."""
+    """Neuronum CLI App for Cell management."""
     pass
 
 # Cell Management Commands
 
 @click.command()
 def create_cell():
-    """Creates a new Community Cell with a freshly generated 12-word mnemonic."""
+    """Creates a new Business Cell via email verification."""
 
-    click.echo("By creating a Cell, you agree to the Neuronum Terms of Service.")
+    # 1. Collect business info
+    business_name = questionary.text("Company / business name:").ask()
+    if not business_name:
+        click.echo("Canceled.")
+        return
+
+    business_email = questionary.text("Business email:").ask()
+    if not business_email:
+        click.echo("Canceled.")
+        return
+
+    # 2. Send verification email
+    click.echo("Sending verification email...")
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/send_verification_email",
+            json={"business_email": business_email, "business_name": business_name},
+            timeout=10
+        )
+        response.raise_for_status()
+        result = response.json()
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error:Error communicating with server: {e}")
+        return
+
+    if str(result.get("success", "")).lower() != "true":
+        click.echo(f"Error:{result.get('message', 'Failed to send verification email.')}")
+        return
+
+    click.echo(f"Verification code sent to {business_email}.")
+
+    # 3. Accept Terms of Service
+    click.echo("\nBy creating a Cell you agree to the Neuronum Terms of Service.")
     click.echo("Read them at: https://neuronum.net/legals")
     accepted = questionary.confirm("Do you accept the Terms of Service?").ask()
     if not accepted:
         click.echo("You must accept the Terms of Service to create a Cell.")
         return
 
-    click.echo("\nCreating a new Community Cell...")
-    click.echo("Warning:Save your mnemonic in a secure location! You'll need it to access your Cell.\n")
+    # 4. Enter verification code
+    verification_code = questionary.text("Enter the verification code:").ask()
+    if not verification_code:
+        click.echo("Canceled.")
+        return
 
-    # 1. Generate a new 12-word mnemonic
+    # 5. Generate mnemonic + keys, then verify email
+    click.echo("Verifying...")
     mnemonic_obj = Bip39MnemonicGenerator().FromWordsNumber(12)
     mnemonic = str(mnemonic_obj)
+    private_key, _, pem_private, pem_public = derive_keys_from_mnemonic(mnemonic)
 
-    # 2. Derive keys from the mnemonic
-    private_key, public_key, pem_private, pem_public = derive_keys_from_mnemonic(mnemonic)
     if not private_key:
         return
 
-    # 3. Call API to create the cell
-    click.echo("Registering new Cell on Neuronum network...")
-    url = f"{API_BASE_URL}/create_community_cell"
-
-    payload = {
-        "public_key": pem_public.decode("utf-8")
-    }
+    business_domain = business_email.split('@')[1]
 
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(
+            f"{API_BASE_URL}/verify_email",
+            json={
+                "public_key": pem_public.decode("utf-8"),
+                "business_email": business_email,
+                "business_domain": business_domain,
+                "verification_code": verification_code,
+                "company_name": business_name
+            },
+            timeout=10
+        )
         response.raise_for_status()
-        response_data = response.json()
-
-        if response_data.get("success") == "True" and response_data.get("host"):
-            host = response_data.get("host")
-            cell_type = "community"  # New cells are community type
-
-            # 5. Save credentials locally
-            if save_credentials(host, mnemonic, pem_public, pem_private, cell_type):
-                click.echo(f"\nCommunity Cell created successfully!")
-                click.echo(f"Host: {host}")
-                click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
-                click.echo(f"   {mnemonic}")
-                click.echo(f"\nNote:This mnemonic is the ONLY way to recover your Cell.")
-                click.echo(f"   Write it down and store it in a safe place!\n")
-            else:
-                click.echo("Warning:Cell created on server but failed to save locally.")
-                click.echo(f"Your mnemonic: {mnemonic}")
-        else:
-            error_msg = response_data.get("message", "Unknown error")
-            click.echo(f"Error:Failed to create Cell: {error_msg}")
-
+        result = response.json()
     except requests.exceptions.RequestException as e:
         click.echo(f"Error:Error communicating with server: {e}")
         return
 
+    if str(result.get("success", "")).lower() != "true" or not result.get("host"):
+        click.echo(f"Error:{result.get('message', 'Verification failed.')}")
+        return
 
+    host = result.get("host")
+
+    # 6. Save credentials and connect
+    if save_credentials(host, mnemonic, pem_public, pem_private, "business"):
+        click.echo(f"\nBusiness Cell created and connected successfully!")
+        click.echo(f"Host: {host}")
+        click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
+        click.echo(f"   {mnemonic}")
+        click.echo(f"\nNote:This mnemonic is the ONLY way to recover your Cell.")
+        click.echo(f"   Write it down and store it in a safe place!\n")
+    else:
+        click.echo("Warning:Cell created on server but failed to connect locally.")
+        click.echo(f"Your mnemonic: {mnemonic}")
+    
 @click.command()
 def connect_cell():
     """Connects to an existing Cell using a 12-word mnemonic."""
@@ -265,7 +302,7 @@ def connect_cell():
     # 5. Save Credentials
     if host and cell_type:
         if save_credentials(host, mnemonic, pem_public, pem_private, cell_type):
-            click.echo(f"Successfully connected to Community Cell '{host}'.")
+            click.echo(f"Successfully connected to Cell '{host}'.")
         # Error saving credentials already echoed in helper
     else:
         click.echo("Error:Failed to retrieve host from server. Connection failed.")
@@ -400,7 +437,12 @@ async def async_init_agent():
         return
 
     host = credentials['host']
+    cell_type = credentials['type']
     private_key = credentials['private_key']
+
+    if cell_type != "business":
+        click.echo("Error: Only business cells can initialize agents.")
+        return
 
     # Prepare signed message for API authentication
     timestamp = str(int(time.time()))
@@ -424,7 +466,7 @@ async def async_init_agent():
     except requests.exceptions.RequestException as e:
         click.echo(f"Error:Error communicating with the server: {e}")
         return
-    
+
     agent_folder = "agent_" + agent_id
     project_path = Path(agent_folder)
     project_path.mkdir(exist_ok=True)
@@ -888,7 +930,6 @@ if __name__ == "__main__":
         }
     }, indent=2)
     config_path.write_text(config_data + "\n")
-    
     click.echo(f"Agent '{agent_id}' initialized!")
 
 

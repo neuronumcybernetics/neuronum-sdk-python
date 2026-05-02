@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.05.1 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum create-cell` now requires email verification
+
 ### 2026.04.9 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum init-agent` updates in agent.py + agent.html boilerplate
