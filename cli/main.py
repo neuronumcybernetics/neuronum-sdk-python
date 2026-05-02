@@ -19,6 +19,7 @@ from bip_utils import Bip39MnemonicGenerator, Bip39SeedGenerator
 from bip_utils import Bip39MnemonicValidator, Bip39Languages
 import json
 import subprocess
+import shutil
 import os
 import sys
 import signal
@@ -172,8 +173,15 @@ def create_cell():
             json={"business_email": business_email, "business_name": business_name},
             timeout=10
         )
+        if response.status_code == 400:
+            detail = response.json().get("detail", "Invalid request.")
+            click.echo(f"Error:{detail}")
+            return
         response.raise_for_status()
         result = response.json()
+    except requests.exceptions.HTTPError as e:
+        click.echo(f"Error:{e}")
+        return
     except requests.exceptions.RequestException as e:
         click.echo(f"Error:Error communicating with server: {e}")
         return
@@ -437,14 +445,8 @@ async def async_init_agent():
         return
 
     host = credentials['host']
-    cell_type = credentials['type']
     private_key = credentials['private_key']
 
-    if cell_type != "business":
-        click.echo("Error: Only business cells can initialize agents.")
-        return
-
-    # Prepare signed message for API authentication
     timestamp = str(int(time.time()))
     message = f"host={host};timestamp={timestamp}"
     signature_b64 = sign_message(private_key, message.encode())
@@ -452,15 +454,12 @@ async def async_init_agent():
     if not signature_b64:
         return
 
-    url = f"{API_BASE_URL}/init_agent"
-    payload = {
-        "host": host,
-        "signed_message": signature_b64,
-        "message": message
-    }
-
     try:
-        response = requests.post(url, json=payload, timeout=10)
+        response = requests.post(
+            f"{API_BASE_URL}/init_agent",
+            json={"host": host, "signed_message": signature_b64, "message": message},
+            timeout=10
+        )
         response.raise_for_status()
         agent_id = response.json().get("agent_id", False)
     except requests.exceptions.RequestException as e:
@@ -469,444 +468,35 @@ async def async_init_agent():
 
     agent_folder = "agent_" + agent_id
     project_path = Path(agent_folder)
-    project_path.mkdir(exist_ok=True)
-                                                                                                           
-    agent_path = project_path / "agent.py"
-    agent_path.write_text('''\
-import os
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-import asyncio
-import json
-import logging
-from neuronum import Cell
-from model import get_model
-from jinja2 import Environment, FileSystemLoader
-
-
-# ── Setup ────────────────────────────────────────────────────────────────────
-
-logging.basicConfig(filename="agent.log", level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
-
-template_env = Environment(loader=FileSystemLoader(os.path.dirname(os.path.abspath(__file__))))
-
-with open("agent.config", "r") as f:
-    app_config = json.load(f)
-
-
-# ── Auth ─────────────────────────────────────────────────────────────────────
-
-def is_authorized(sender: str, server_host: str, agent_id: str) -> bool:
-    my_agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
-    if not agent_id or agent_id != my_agent_id:
-        return False
-                          
-    if sender == server_host:
-        return True
-
-    audience = app_config.get("agent_meta", {}).get("audience", "private")
-    if audience == "public":
-        return True
-    if audience == "private":
-        return sender == server_host
-    allowed_cells = [c.strip() for c in audience.split(",")]
-    return sender in allowed_cells
-
-
-# ── Handlers ─────────────────────────────────────────────────────────────────
-
-async def handle_get_answer(cell, tx: dict):
-    data = tx.get("data", {})
-    query = data.get("query", "")
-    context = data.get("context", "")
-
-    llm = get_model()
-    messages = [{"role": "user", "content": query}]
-    if context:
-        messages.insert(0, {"role": "system", "content": context})
-    result = llm.create_chat_completion(messages=messages)
-    answer = result["choices"][0]["message"]["content"]
-
-    await cell.tx_response(
-        tx_id=tx.get("tx_id"),
-        data={"json": {"answer": answer}},
-        client_public_key_str=data.get("public_key", "")
+    click.echo("Downloading boilerplate...")
+    result = subprocess.run(
+        ["git", "clone", "https://github.com/neuronumcybernetics/agent-boilerplate.git", agent_folder],
+        capture_output=True, text=True
     )
+    if result.returncode != 0:
+        click.echo(f"Error:Failed to clone boilerplate: {result.stderr.strip()}")
+        return
 
-
-async def handle_get_ui(cell, tx: dict):
-    data = tx.get("data", {})
-
-    template = template_env.get_template("agent.html")
-    host = cell.host or cell.env.get("HOST", "")
-    agent_id = app_config.get("agent_meta", {}).get("agent_id", "")
-    html = template.render(host=host, agent_id=agent_id)
-
-    await cell.tx_response(
-        tx_id=tx.get("tx_id"),
-        data={"html": html},
-        client_public_key_str=data.get("public_key", "")
-    )
-
-
-# ── Agent ─────────────────────────────────────────────────────────────────────
-
-async def start_agent(cell):
-    async for tx in cell.sync():
-        try:
-            data = tx.get("data", {})
-            handle = data.get("handle", None)
-            sender = tx.get("sender", "")
-            server_host = cell.host or cell.env.get("HOST", "")
-            agent_id = data.get("agent_id", "")
-
-            if not is_authorized(sender, server_host, agent_id):
-                logging.warning(f"Access denied: \'{sender}\' is not authorized")
-                await cell.tx_response(
-                    tx_id=tx.get("tx_id"),
-                    data={"json": "Access denied: This endpoint is not available."},
-                    client_public_key_str=data.get("public_key", "")
-                )
-                continue
-
-            handlers = {
-                "get_answer": lambda: handle_get_answer(cell, tx),
-                "get_ui": lambda: handle_get_ui(cell, tx),
-            }
-
-            handler = handlers.get(handle)
-            if handler:
-                await handler()
-
-        except Exception as e:
-            logging.error(f"Error: {e}")
-
-
-async def main():
-    async with Cell() as cell:
-        await start_agent(cell)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-''')
-
-    html_path = project_path / "agent.html"
-    html_path.write_text('''\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Q&A Agent</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background: #040404;
-      font-family: \'Inter\', sans-serif;
-      color: white;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .header {
-      padding: 16px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-
-    .header-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .header-name {
-      font-size: 13px;
-      font-weight: 600;
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    .header-status {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.35);
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-
-    .status-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #4ade80;
-    }
-
-    .messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      scrollbar-width: none;
-    }
-
-    .messages::-webkit-scrollbar { display: none; }
-
-    .message {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      max-width: 85%;
-    }
-
-    .message.user {
-      align-self: flex-end;
-      align-items: flex-end;
-    }
-
-    .message.agent {
-      align-self: flex-start;
-      align-items: flex-start;
-    }
-
-    .message-bubble {
-      padding: 10px 14px;
-      border-radius: 12px;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-
-    .message.user .message-bubble {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: rgba(255, 255, 255, 0.9);
-      border-bottom-right-radius: 4px;
-    }
-
-    .message.agent .message-bubble {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      color: rgba(255, 255, 255, 0.8);
-      border-bottom-left-radius: 4px;
-    }
-
-    .message.agent .message-bubble.thinking {
-      color: rgba(255, 255, 255, 0.3);
-      font-style: italic;
-    }
-
-    .input-row {
-      padding: 12px 16px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      display: flex;
-      gap: 8px;
-      align-items: flex-end;
-      flex-shrink: 0;
-    }
-
-    .input-wrap {
-      flex: 1;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      transition: border-color 0.2s;
-    }
-
-    .input-wrap:focus-within {
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-
-    textarea {
-      flex: 1;
-      background: transparent;
-      border: none;
-      outline: none;
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 13px;
-      font-family: \'Inter\', sans-serif;
-      resize: none;
-      padding: 10px 0;
-      max-height: 120px;
-      line-height: 1.5;
-      scrollbar-width: none;
-    }
-
-    textarea::-webkit-scrollbar { display: none; }
-    textarea::placeholder { color: rgba(255, 255, 255, 0.25); }
-
-    .send-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: rgba(255, 255, 255, 0.7);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 13px;
-      transition: all 0.2s;
-      flex-shrink: 0;
-    }
-
-    .send-btn:hover:not(:disabled) {
-      background: rgba(255, 255, 255, 0.14);
-      color: rgba(255, 255, 255, 0.95);
-    }
-
-    .send-btn:disabled {
-      opacity: 0.35;
-      cursor: not-allowed;
-    }
-  </style>
-</head>
-<body>
-
-  <div class="header">
-    <div class="header-info">
-      <div class="header-name">Q&amp;A Agent</div>
-      <div class="header-status">
-        <div class="status-dot"></div>
-        <span>Ready</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="messages" id="messages"></div>
-
-  <div class="input-row">
-    <div class="input-wrap">
-      <textarea id="input" placeholder="Ask anything..." rows="1"></textarea>
-    </div>
-    <button class="send-btn" id="send-btn" title="Send">&#x27A4;</button>
-  </div>
-
-<script>
-  const messagesEl = document.getElementById(\'messages\');
-  const inputEl = document.getElementById(\'input\');
-  const sendBtn = document.getElementById(\'send-btn\');
-
-  function addMessage(role, text, thinking = false) {
-    const msg = document.createElement(\'div\');
-    msg.className = `message ${role}`;
-    const bubble = document.createElement(\'div\');
-    bubble.className = `message-bubble${thinking ? \' thinking\' : \'\'}`;
-    bubble.textContent = text;
-    msg.appendChild(bubble);
-    messagesEl.appendChild(msg);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-    return bubble;
-  }
-
-  async function send() {
-    const query = inputEl.value.trim();
-    if (!query) return;
-
-    inputEl.value = \'\';
-    inputEl.style.height = \'auto\';
-    sendBtn.disabled = true;
-
-    addMessage(\'user\', query);
-    const thinkingBubble = addMessage(\'agent\', \'Thinking...\', true);
-
-    try {
-      const payload = JSON.stringify({ handle: \'get_answer\', query, agent_id: \'{{ agent_id }}\' });
-      const result = await window.parent.pywebview.api.console_activate_tx(payload, "{{ host }}");
-
-      const answer = result?.data?.json?.answer
-        || result?.json?.answer
-        || result?.answer
-        || JSON.stringify(result);
-
-      thinkingBubble.classList.remove(\'thinking\');
-      thinkingBubble.textContent = answer;
-    } catch (e) {
-      thinkingBubble.classList.remove(\'thinking\');
-      thinkingBubble.textContent = `Error: ${e.message || e}`;
-    } finally {
-      sendBtn.disabled = false;
-      inputEl.focus();
-    }
-  }
-
-  sendBtn.addEventListener(\'click\', send);
-
-  inputEl.addEventListener(\'keydown\', (e) => {
-    if (e.key === \'Enter\' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  });
-
-  inputEl.addEventListener(\'input\', () => {
-    inputEl.style.height = \'auto\';
-    inputEl.style.height = inputEl.scrollHeight + \'px\';
-  });
-</script>
-
-</body>
-</html>
-''')
-
-    model_path = project_path / "model.py"
-    model_path.write_text('''\
-# !pip install llama-cpp-python
-
-from llama_cpp import Llama
-
-REPO_ID = "Qwen/Qwen2.5-3B-Instruct-GGUF"
-FILENAME = "qwen2.5-3b-instruct-q4_k_m.gguf"
-
-_llm = None
-
-def get_model():
-    global _llm
-    if _llm is None:
-        print(f"Loading model {REPO_ID}...")
-        _llm = Llama.from_pretrained(
-            repo_id=REPO_ID,
-            filename=FILENAME,
-            n_gpu_layers=-1,
-            n_ctx=2048,
-        )
-        print("Model loaded.")
-    return _llm
-
-if __name__ == "__main__":
-    get_model()
-    print("Model downloaded and ready.")
-''')
+    shutil.rmtree(project_path / ".git", ignore_errors=True)
 
     config_path = project_path / "agent.config"
     config_data = json.dumps({
         "agent_meta": {
             "agent_id": agent_id,
             "version": "1.0.0",
-            "name": "Q&A Agent",
-            "description": "An agent that returns answers to natural language prompts",
+            "name": "Task Agent",
+            "description": "An agent that helps you get tasks done by answering questions and delegating to specialized agents",
             "audience": "private",
             "logo": "https://neuronum.net/static/logo_new.png"
         },
         "skills": [
         {
             "handle": "get_answer",
-            "description": "Ask a question and get an answer.",
+            "description": "Submit a task or question and get an answer, with optional delegation to a specialized agent.",
             "examples": [
-                "What is the capital of France?",
-                "Explain quantum mechanics simply."
+                "Summarize the key points from this document.",
+                "Draft a follow-up email for a client meeting."
             ],
             "stream": False,
             "input_schema": {

@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.05.2 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum init-agent` fetches agent boilerplate folder via git (https://github.com/neuronumcybernetics/agent-boilerplate)
+
 ### 2026.05.1 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum create-cell` now requires email verification
