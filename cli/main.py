@@ -436,91 +436,130 @@ def disconnect_cell():
 
 @click.command()
 def init_agent():
-    asyncio.run(async_init_agent())
-
-async def async_init_agent():
-    """Initialize a new agent by registering it with the Neuronum network and creating local files."""
     credentials = load_credentials()
     if not credentials:
         return
 
     host = credentials['host']
     private_key = credentials['private_key']
+    cell_type = credentials['type']
 
-    timestamp = str(int(time.time()))
-    message = f"host={host};timestamp={timestamp}"
-    signature_b64 = sign_message(private_key, message.encode())
+    if cell_type == "business":
+        agent_type = questionary.select(
+            "Select agent type:",
+            choices=["Task Agent", "Personal Agent"]
+        ).ask()
+        if not agent_type:
+            click.echo("Canceled.")
+            return
+        use_business = agent_type == "Task Agent"
+    else:
+        use_business = False
 
-    if not signature_b64:
-        return
+    if use_business:
+        timestamp = str(int(time.time()))
+        message = f"host={host};timestamp={timestamp}"
+        signature_b64 = sign_message(private_key, message.encode())
 
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/init_agent",
-            json={"host": host, "signed_message": signature_b64, "message": message},
-            timeout=10
+        if not signature_b64:
+            return
+
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/init_agent",
+                json={"host": host, "signed_message": signature_b64, "message": message},
+                timeout=10
+            )
+            response.raise_for_status()
+            agent_id = response.json().get("agent_id", False)
+        except requests.exceptions.RequestException as e:
+            click.echo(f"Error:Error communicating with the server: {e}")
+            return
+
+        agent_folder = "agent_" + agent_id
+        project_path = Path(agent_folder)
+
+        click.echo("Downloading boilerplate...")
+        clone_result = subprocess.run(
+            ["git", "clone", "https://github.com/neuronumcybernetics/agent-boilerplate.git", agent_folder],
+            capture_output=True, text=True
         )
-        response.raise_for_status()
-        agent_id = response.json().get("agent_id", False)
-    except requests.exceptions.RequestException as e:
-        click.echo(f"Error:Error communicating with the server: {e}")
-        return
+        if clone_result.returncode != 0:
+            click.echo(f"Error:Failed to clone boilerplate: {clone_result.stderr.strip()}")
+            return
 
-    agent_folder = "agent_" + agent_id
-    project_path = Path(agent_folder)
+        shutil.rmtree(project_path / ".git", ignore_errors=True)
 
-    click.echo("Downloading boilerplate...")
-    result = subprocess.run(
-        ["git", "clone", "https://github.com/neuronumcybernetics/agent-boilerplate.git", agent_folder],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        click.echo(f"Error:Failed to clone boilerplate: {result.stderr.strip()}")
-        return
+        business_src = project_path / "task_agent"
+        for f in business_src.iterdir():
+            shutil.move(str(f), str(project_path / f.name))
+        shutil.rmtree(str(business_src), ignore_errors=True)
+        shutil.rmtree(str(project_path / "personal_agent"), ignore_errors=True)
 
-    shutil.rmtree(project_path / ".git", ignore_errors=True)
-
-    config_path = project_path / "agent.config"
-    config_data = json.dumps({
-        "agent_meta": {
-            "agent_id": agent_id,
-            "version": "1.0.0",
-            "name": "Task Agent",
-            "description": "An agent that helps you get tasks done by answering questions and delegating to specialized agents",
-            "audience": "private",
-            "logo": "https://neuronum.net/static/logo_new.png"
-        },
-        "skills": [
-        {
-            "handle": "get_answer",
-            "description": "Submit a task or question and get an answer, with optional delegation to a specialized agent.",
-            "examples": [
-                "Summarize the key points from this document.",
-                "Draft a follow-up email for a client meeting."
-            ],
-            "stream": False,
-            "input_schema": {
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The user request"
+        config_path = project_path / "agent.config"
+        config_data = json.dumps({
+            "agent_meta": {
+                "agent_id": agent_id,
+                "version": "1.0.0",
+                "name": "Task Agent",
+                "description": "An agent that helps you get tasks done by answering questions and delegating to specialized agents",
+                "audience": "private",
+                "logo": "https://neuronum.net/static/logo_new.png"
+            },
+            "skills": [
+            {
+                "handle": "get_answer",
+                "description": "Submit a task or question and get an answer, with optional delegation to a specialized agent.",
+                "examples": [
+                    "Summarize the key points from this document.",
+                    "Draft a follow-up email for a client meeting."
+                ],
+                "stream": False,
+                "input_schema": {
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The user request"
+                        },
+                        "context": {
+                            "type": "string",
+                            "description": "Optional background information"
+                        }
                     },
-                    "context": {
-                        "type": "string",
-                        "description": "Optional background information"
-                    }
-                },
-                "required": ["query"]
+                    "required": ["query"]
+                }
             }
-        }
-        ],
-        "legals": {
-            "terms": "https://url_to_your/legals",
-            "privacy_policy": "https://url_to_your/legals"
-        }
-    }, indent=2)
-    config_path.write_text(config_data + "\n")
-    click.echo(f"Agent '{agent_id}' initialized!")
+            ],
+            "legals": {
+                "terms": "https://url_to_your/legals",
+                "privacy_policy": "https://url_to_your/legals"
+            }
+        }, indent=2)
+        config_path.write_text(config_data + "\n")
+        click.echo(f"Agent '{agent_id}' initialized!")
+
+    else:
+        agent_folder = "personal_agent"
+        project_path = Path(agent_folder)
+
+        click.echo("Downloading boilerplate...")
+        clone_result = subprocess.run(
+            ["git", "clone", "https://github.com/neuronumcybernetics/agent-boilerplate.git", agent_folder],
+            capture_output=True, text=True
+        )
+        if clone_result.returncode != 0:
+            click.echo(f"Error:Failed to clone boilerplate: {clone_result.stderr.strip()}")
+            return
+
+        shutil.rmtree(project_path / ".git", ignore_errors=True)
+
+        personal_src = project_path / "personal_agent"
+        for f in personal_src.iterdir():
+            shutil.move(str(f), str(project_path / f.name))
+        shutil.rmtree(str(personal_src), ignore_errors=True)
+        shutil.rmtree(str(project_path / "task_agent"), ignore_errors=True)
+
+        click.echo("Personal agent initialized!")
 
 
 @click.command()
