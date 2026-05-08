@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.05.4 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum init-agent` fetches agent.config boilerplate via git
+
 ### 2026.05.3 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum init-agent` fetches agent boilerplate based on cell_type and selection (personal or task agent)

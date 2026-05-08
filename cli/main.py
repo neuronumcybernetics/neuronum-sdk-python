@@ -490,52 +490,21 @@ def init_agent():
 
         shutil.rmtree(project_path / ".git", ignore_errors=True)
 
-        business_src = project_path / "task_agent"
-        for f in business_src.iterdir():
+        task_src = project_path / "task_agent"
+        for f in task_src.iterdir():
             shutil.move(str(f), str(project_path / f.name))
-        shutil.rmtree(str(business_src), ignore_errors=True)
+        shutil.rmtree(str(task_src), ignore_errors=True)
         shutil.rmtree(str(project_path / "personal_agent"), ignore_errors=True)
 
         config_path = project_path / "agent.config"
-        config_data = json.dumps({
-            "agent_meta": {
-                "agent_id": agent_id,
-                "version": "1.0.0",
-                "name": "Task Agent",
-                "description": "An agent that helps you get tasks done by answering questions and delegating to specialized agents",
-                "audience": "private",
-                "logo": "https://neuronum.net/static/logo_new.png"
-            },
-            "skills": [
-            {
-                "handle": "get_answer",
-                "description": "Submit a task or question and get an answer, with optional delegation to a specialized agent.",
-                "examples": [
-                    "Summarize the key points from this document.",
-                    "Draft a follow-up email for a client meeting."
-                ],
-                "stream": False,
-                "input_schema": {
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The user request"
-                        },
-                        "context": {
-                            "type": "string",
-                            "description": "Optional background information"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-            ],
-            "legals": {
-                "terms": "https://url_to_your/legals",
-                "privacy_policy": "https://url_to_your/legals"
-            }
-        }, indent=2)
-        config_path.write_text(config_data + "\n")
+        try:
+            config_data = json.loads(config_path.read_text())
+            config_data.setdefault("agent_meta", {})["agent_id"] = agent_id
+            config_path.write_text(json.dumps(config_data, indent=2) + "\n")
+        except Exception as e:
+            click.echo(f"Error:Failed to update agent.config: {e}")
+            return
+
         click.echo(f"Agent '{agent_id}' initialized!")
 
     else:
