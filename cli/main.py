@@ -77,14 +77,14 @@ def derive_keys_from_mnemonic(mnemonic: str):
         click.echo(f"Error:Error generating keys from mnemonic: {e}")
         return None, None, None, None
 
-def save_credentials(host: str, mnemonic: str, pem_public: bytes, pem_private: bytes, cell_type: str):
+def save_credentials(host: str, operator: str, mnemonic: str, pem_public: bytes, pem_private: bytes, cell_type: str):
     """Save cell credentials to .neuronum directory with secure file permissions."""
     import os
     try:
         NEURONUM_PATH.mkdir(parents=True, exist_ok=True)
 
         # Save environment configuration with sensitive data
-        env_content = f"HOST={host}\nMNEMONIC=\"{mnemonic}\"\nTYPE={cell_type}\n"
+        env_content = f"HOST={host}\nOPERATOR={operator}\nMNEMONIC=\"{mnemonic}\"\nTYPE={cell_type}\n"
         ENV_FILE.write_text(env_content)
         os.chmod(ENV_FILE, 0o600)  # Owner read/write only
 
@@ -242,7 +242,7 @@ def create_cell():
     host = result.get("host")
 
     # 6. Save credentials and connect
-    if save_credentials(host, mnemonic, pem_public, pem_private, "business"):
+    if save_credentials(host, business_name, mnemonic, pem_public, pem_private, "business"):
         click.echo(f"\nBusiness Cell created and connected successfully!")
         click.echo(f"Host: {host}")
         click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
@@ -302,6 +302,7 @@ def connect_cell():
         response = requests.post(url, json=connect_data, timeout=10)
         response.raise_for_status()
         host = response.json().get("host")
+        operator = response.json().get("operator")
         cell_type = response.json().get("cell_type")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error:Error connecting to cell: {e}")
@@ -309,7 +310,7 @@ def connect_cell():
 
     # 5. Save Credentials
     if host and cell_type:
-        if save_credentials(host, mnemonic, pem_public, pem_private, cell_type):
+        if save_credentials(host, operator, mnemonic, pem_public, pem_private, cell_type):
             click.echo(f"Successfully connected to Cell '{host}'.")
         # Error saving credentials already echoed in helper
     else:

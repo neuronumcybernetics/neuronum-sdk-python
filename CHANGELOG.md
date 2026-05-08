@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.05.5 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum create-cell` and `neuronum connect-cell` store operator (name)
+
 ### 2026.05.4 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum init-agent` fetches agent.config boilerplate via git
