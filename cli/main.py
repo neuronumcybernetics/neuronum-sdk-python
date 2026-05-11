@@ -445,19 +445,19 @@ def init_agent():
     private_key = credentials['private_key']
     cell_type = credentials['type']
 
-    if cell_type == "business":
-        agent_type = questionary.select(
-            "Select agent type:",
-            choices=["Task Agent", "Personal Agent"]
-        ).ask()
-        if not agent_type:
-            click.echo("Canceled.")
-            return
-        use_business = agent_type == "Task Agent"
-    else:
-        use_business = False
+    if cell_type != "business":
+        click.echo("Error: Only business cells can initialize agents.")
+        return
 
-    if use_business:
+    agent_type = questionary.select(
+        "Select agent type:",
+        choices=["Task Agent", "Business Agent"]
+    ).ask()
+    if not agent_type:
+        click.echo("Canceled.")
+        return
+
+    if agent_type == "Task Agent":
         timestamp = str(int(time.time()))
         message = f"host={host};timestamp={timestamp}"
         signature_b64 = sign_message(private_key, message.encode())
@@ -495,7 +495,7 @@ def init_agent():
         for f in task_src.iterdir():
             shutil.move(str(f), str(project_path / f.name))
         shutil.rmtree(str(task_src), ignore_errors=True)
-        shutil.rmtree(str(project_path / "personal_agent"), ignore_errors=True)
+        shutil.rmtree(str(project_path / "business_agent"), ignore_errors=True)
 
         config_path = project_path / "agent.config"
         try:
@@ -509,7 +509,7 @@ def init_agent():
         click.echo(f"Agent '{agent_id}' initialized!")
 
     else:
-        agent_folder = "personal_agent"
+        agent_folder = "business_agent"
         project_path = Path(agent_folder)
 
         click.echo("Downloading boilerplate...")
@@ -523,13 +523,13 @@ def init_agent():
 
         shutil.rmtree(project_path / ".git", ignore_errors=True)
 
-        personal_src = project_path / "personal_agent"
-        for f in personal_src.iterdir():
+        business_src = project_path / "business_agent"
+        for f in business_src.iterdir():
             shutil.move(str(f), str(project_path / f.name))
-        shutil.rmtree(str(personal_src), ignore_errors=True)
+        shutil.rmtree(str(business_src), ignore_errors=True)
         shutil.rmtree(str(project_path / "task_agent"), ignore_errors=True)
 
-        click.echo("Personal agent initialized!")
+        click.echo("Business agent initialized!")
 
 
 @click.command()

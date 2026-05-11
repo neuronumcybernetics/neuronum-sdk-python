@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.05.6 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `neuronum init-agent` blocked for cells of type "employee"
+
 ### 2026.05.5 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum create-cell` and `neuronum connect-cell` store operator (name)
