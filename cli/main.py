@@ -445,17 +445,16 @@ def init_agent():
     private_key = credentials['private_key']
     cell_type = credentials['type']
 
-    if cell_type != "business":
-        click.echo("Error: Only business cells can initialize agents.")
-        return
-
-    agent_type = questionary.select(
-        "Select agent type:",
-        choices=["Task Agent", "Business Agent"]
-    ).ask()
-    if not agent_type:
-        click.echo("Canceled.")
-        return
+    if cell_type == "business":
+        agent_type = questionary.select(
+            "Select agent type:",
+            choices=["Task Agent", "Business Agent"]
+        ).ask()
+        if not agent_type:
+            click.echo("Canceled.")
+            return
+    else:
+        agent_type = "Personal Agent"
 
     if agent_type == "Task Agent":
         timestamp = str(int(time.time()))
@@ -496,6 +495,7 @@ def init_agent():
             shutil.move(str(f), str(project_path / f.name))
         shutil.rmtree(str(task_src), ignore_errors=True)
         shutil.rmtree(str(project_path / "business_agent"), ignore_errors=True)
+        shutil.rmtree(str(project_path / "personal_agent"), ignore_errors=True)
 
         config_path = project_path / "agent.config"
         try:
@@ -508,7 +508,7 @@ def init_agent():
 
         click.echo(f"Agent '{agent_id}' initialized!")
 
-    else:
+    elif agent_type == "Business Agent":
         agent_folder = "business_agent"
         project_path = Path(agent_folder)
 
@@ -523,13 +523,38 @@ def init_agent():
 
         shutil.rmtree(project_path / ".git", ignore_errors=True)
 
-        business_src = project_path / "business_agent"
-        for f in business_src.iterdir():
+        src = project_path / "business_agent"
+        for f in src.iterdir():
             shutil.move(str(f), str(project_path / f.name))
-        shutil.rmtree(str(business_src), ignore_errors=True)
+        shutil.rmtree(str(src), ignore_errors=True)
         shutil.rmtree(str(project_path / "task_agent"), ignore_errors=True)
+        shutil.rmtree(str(project_path / "personal_agent"), ignore_errors=True)
 
         click.echo("Business agent initialized!")
+
+    else:
+        agent_folder = "personal_agent"
+        project_path = Path(agent_folder)
+
+        click.echo("Downloading boilerplate...")
+        clone_result = subprocess.run(
+            ["git", "clone", "https://github.com/neuronumcybernetics/agent-boilerplate.git", agent_folder],
+            capture_output=True, text=True
+        )
+        if clone_result.returncode != 0:
+            click.echo(f"Error:Failed to clone boilerplate: {clone_result.stderr.strip()}")
+            return
+
+        shutil.rmtree(project_path / ".git", ignore_errors=True)
+
+        src = project_path / "personal_agent"
+        for f in src.iterdir():
+            shutil.move(str(f), str(project_path / f.name))
+        shutil.rmtree(str(src), ignore_errors=True)
+        shutil.rmtree(str(project_path / "task_agent"), ignore_errors=True)
+        shutil.rmtree(str(project_path / "business_agent"), ignore_errors=True)
+
+        click.echo("Personal agent initialized!")
 
 
 @click.command()
