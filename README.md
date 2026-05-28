@@ -97,7 +97,11 @@ An Agent is any (AI) service that you build upon your Cell, exposing skills that
 ```sh
 neuronum init-agent
 ```
-This creates an agent folder named agent_*agent_id* with `agent.py`, `model.py`, and `agent.config`.
+Business cells can choose between two agent types:
+
+**Task Agent** — service-level agents that register on the Neuronum network, receive a unique `agent_id`, and are discoverable by other cells. The agent folder is named `agent_<agent_id>` and includes `agent.py`, `model.py`, and `agent.config`.
+
+**Business Agent** — compliance-level agents that run locally within your business infrastructure without network registration. The agent folder is named `business_agent` and includes `agent.py`, `model.py`, and `agent.html`.
 
 **agent.config** (inspired by Google's A2A protocol Agent Card)**:**
 ```json

@@ -20,11 +20,7 @@
 </p>
 
 ---
-### 2026.05.7 / Not-Production Ready (Network in Testing)
-**Changes:**
-- `neuronum init-agent` uses personal_agent boilerplate for cells of type "employee"
-
-### 2026.05.6 / Not-Production Ready (Network in Testing)
+### 2026.05.6 - 2026.05.8 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum init-agent` blocked for cells of type "employee"
 
