@@ -140,6 +140,7 @@ Business cells can choose between two agent types:
       }
     }
   ],
+  "auth": [],
   "legals": {
     "terms": "https://url_to_your/legals",
     "privacy_policy": "https://url_to_your/legals"
@@ -161,6 +162,7 @@ Business cells can choose between two agent types:
 | `skills[].description` | What the skill does |
 | `skills[].examples` | Example prompts or inputs |
 | `skills[].input_schema` | JSON Schema defining the expected input fields |
+| `auth` | Authentication parameters required to invoke the agent. Can be an empty array if no authentication is required |
 | `legals` | Links to your terms of service and privacy policy |
 
 **Start your Agent:**
