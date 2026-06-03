@@ -140,7 +140,7 @@ Business cells can choose between two agent types:
       }
     }
   ],
-  "auth": [],
+  "auth": ["api_key"],
   "legals": {
     "terms": "https://url_to_your/legals",
     "privacy_policy": "https://url_to_your/legals"
