@@ -208,7 +208,7 @@ Cells interact using six methods:
 
 All data is end-to-end encrypted. The network handles routing, key exchange, and delivery. You just send and receive.
 
-**Connecting to the network:** Use `async with Cell() as cell` to connect. This reads your Cell credentials from `~/.neuronum/.env` and establishes a connection to the Neuronum network.
+**Connecting to the network:** Use `async with Cell(network="testnet.neuronum.net") as cell` to connect. This reads your Cell credentials from `~/.neuronum/.env` and establishes a connection to the specified Neuronum network. Omitting the `network` parameter defaults to `testnet.neuronum.net`.
 
 ------------------
 
@@ -220,7 +220,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell() as cell:
+    async with Cell(network="testnet.neuronum.net") as cell:
         cells = await cell.list_cells()
         print(cells)
 
@@ -233,7 +233,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell() as cell:
+    async with Cell(network="testnet.neuronum.net") as cell:
         agents = await cell.list_agents()
         print(agents)
 
@@ -246,7 +246,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell() as cell:
+    async with Cell(network="testnet.neuronum.net") as cell:
         await cell.stream(
           {"msg": "Ping"},
           "receiver_cell_id"
@@ -261,7 +261,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell() as cell:
+    async with Cell(network="testnet.neuronum.net") as cell:
         tx_response = await cell.activate_tx(
           {"msg": "Ping"},
           "receiver_cell_id"
@@ -277,7 +277,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell() as cell:
+    async with Cell(network="testnet.neuronum.net") as cell:
         async for tx in cell.sync():
             data = tx.get("data", {})
 

@@ -29,7 +29,8 @@ NEURONUM_PATH = Path.home() / ".neuronum"
 ENV_FILE = NEURONUM_PATH / ".env"
 PUBLIC_KEY_FILE = NEURONUM_PATH / "public_key.pem"
 PRIVATE_KEY_FILE = NEURONUM_PATH / "private_key.pem"
-API_BASE_URL = "https://neuronum.net/api"
+DEFAULT_NETWORK = "testnet.neuronum.net"
+API_BASE_URL = f"https://{DEFAULT_NETWORK}/api"
 
 # Utility Functions
 
@@ -77,14 +78,16 @@ def derive_keys_from_mnemonic(mnemonic: str):
         click.echo(f"Error:Error generating keys from mnemonic: {e}")
         return None, None, None, None
 
-def save_credentials(host: str, operator: str, mnemonic: str, pem_public: bytes, pem_private: bytes, cell_type: str):
+def save_credentials(host: str, operator: str, mnemonic: str, pem_public: bytes, pem_private: bytes, cell_type: str, network: str = None):
     """Save cell credentials to .neuronum directory with secure file permissions."""
     import os
+    if network is None:
+        network = DEFAULT_NETWORK
     try:
         NEURONUM_PATH.mkdir(parents=True, exist_ok=True)
 
         # Save environment configuration with sensitive data
-        env_content = f"HOST={host}\nOPERATOR={operator}\nMNEMONIC=\"{mnemonic}\"\nTYPE={cell_type}\n"
+        env_content = f"HOST={host}\nOPERATOR={operator}\nMNEMONIC=\"{mnemonic}\"\nTYPE={cell_type}\nNETWORK={network}\n"
         ENV_FILE.write_text(env_content)
         os.chmod(ENV_FILE, 0o600)  # Owner read/write only
 
@@ -121,6 +124,9 @@ def load_credentials():
         credentials['host'] = credentials.get("HOST")
         credentials['mnemonic'] = credentials.get("MNEMONIC")
         credentials['type'] = credentials.get("TYPE")
+        network = credentials.get("NETWORK", DEFAULT_NETWORK)
+        credentials['network'] = network
+        credentials['api_base_url'] = f"https://{network}/api"
         
         # Load Private Key
         with open(PRIVATE_KEY_FILE, "rb") as key_file:
@@ -154,7 +160,15 @@ def cli():
 def create_cell():
     """Creates a new Business Cell via email verification."""
 
-    # 1. Collect business info
+    # 1. Select network
+    network = questionary.text("Network URL:", default=DEFAULT_NETWORK).ask()
+    if not network:
+        click.echo("Canceled.")
+        return
+    network = network.strip()
+    api_base_url = f"https://{network}/api"
+
+    # 2. Collect business info
     business_name = questionary.text("Company / business name:").ask()
     if not business_name:
         click.echo("Canceled.")
@@ -169,7 +183,7 @@ def create_cell():
     click.echo("Sending verification email...")
     try:
         response = requests.post(
-            f"{API_BASE_URL}/send_verification_email",
+            f"{api_base_url}/send_verification_email",
             json={"business_email": business_email, "business_name": business_name},
             timeout=10
         )
@@ -219,7 +233,7 @@ def create_cell():
 
     try:
         response = requests.post(
-            f"{API_BASE_URL}/verify_email",
+            f"{api_base_url}/verify_email",
             json={
                 "public_key": pem_public.decode("utf-8"),
                 "business_email": business_email,
@@ -242,7 +256,7 @@ def create_cell():
     host = result.get("host")
 
     # 6. Save credentials and connect
-    if save_credentials(host, business_name, mnemonic, pem_public, pem_private, "business"):
+    if save_credentials(host, business_name, mnemonic, pem_public, pem_private, "business", network):
         click.echo(f"\nBusiness Cell created and connected successfully!")
         click.echo(f"Host: {host}")
         click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
@@ -257,7 +271,15 @@ def create_cell():
 def connect_cell():
     """Connects to an existing Cell using a 12-word mnemonic."""
 
-    # 1. Get and Validate Mnemonic
+    # 1. Select network
+    network = questionary.text("Network URL:", default=DEFAULT_NETWORK).ask()
+    if not network:
+        click.echo("Connection canceled.")
+        return
+    network = network.strip()
+    api_base_url = f"https://{network}/api"
+
+    # 2. Get and Validate Mnemonic
     mnemonic = questionary.text("Enter your 12-word BIP-39 mnemonic (space separated):").ask()
 
     if not mnemonic:
@@ -291,7 +313,7 @@ def connect_cell():
 
     # 4. Call API to Connect
     click.echo("Attempting to connect to cell...")
-    url = f"{API_BASE_URL}/connect_cell"
+    url = f"{api_base_url}/connect_cell"
     connect_data = {
         "public_key": public_key_pem_str,
         "signed_message": signature_b64,
@@ -310,7 +332,7 @@ def connect_cell():
 
     # 5. Save Credentials
     if host and cell_type:
-        if save_credentials(host, operator, mnemonic, pem_public, pem_private, cell_type):
+        if save_credentials(host, operator, mnemonic, pem_public, pem_private, cell_type, network):
             click.echo(f"Successfully connected to Cell '{host}'.")
         # Error saving credentials already echoed in helper
     else:
@@ -361,7 +383,7 @@ def delete_cell():
 
     # 4. Call API to Delete
     click.echo(f"Requesting deletion of cell '{host}'...")
-    url = f"{API_BASE_URL}/delete_cell"
+    url = f"{credentials['api_base_url']}/delete_cell"
     payload = {
         "host": host,
         "signed_message": signature_b64,
@@ -467,7 +489,7 @@ def init_agent():
 
         try:
             response = requests.post(
-                f"{API_BASE_URL}/init_agent",
+                f"{credentials['api_base_url']}/init_agent",
                 json={"host": host, "signed_message": signature_b64, "message": message},
                 timeout=10
             )
@@ -574,7 +596,7 @@ async def async_update_agent(config_data, agent_id: str, audience: str):
     if not signature_b64:
         return
 
-    url = f"{API_BASE_URL}/update_agent"
+    url = f"{credentials['api_base_url']}/update_agent"
     payload = {
         "host": host,
         "signed_message": signature_b64,
@@ -647,7 +669,7 @@ def delete_agent():
 
     # Send deletion request to API
     click.echo(f"Requesting deletion of Agent '{agent_id}'...")
-    url = f"{API_BASE_URL}/delete_agent"
+    url = f"{credentials['api_base_url']}/delete_agent"
     payload = {
         "host": host,
         "signed_message": signature_b64,

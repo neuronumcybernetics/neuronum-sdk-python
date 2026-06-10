@@ -20,6 +20,12 @@
 </p>
 
 ---
+### 2026.06.01 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `Cell()` now defaults to `testnet.neuronum.net`. Use `Cell(network="...")` to connect to a different network.
+- `neuronum create-cell` and `neuronum connect-cell` now prompt for a network URL (default: `testnet.neuronum.net`). The selected network is saved to credentials and used for all subsequent CLI commands.
+
+---
 ### 2026.05.6 - 2026.05.8 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `neuronum init-agent` blocked for cells of type "employee"

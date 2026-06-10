@@ -650,13 +650,15 @@ class BaseClient(ABC):
 
 class Cell(BaseClient):
     """Cell client implementation"""
-    
-    def __init__(self, config: Optional[ClientConfig] = None):
+
+    def __init__(self, config: Optional[ClientConfig] = None, network: str = "testnet.neuronum.net"):
+        if config is None:
+            config = ClientConfig(network=network)
         super().__init__(config)
         self.env = self._load_env()
         private_key = self._load_private_key()
         self._init_crypto(private_key)
-        
+
         self.host = self.env.get("HOST", "")
         if not self.host:
             logger.warning("HOST not set in environment")
