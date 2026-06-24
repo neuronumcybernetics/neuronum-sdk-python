@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='neuronum',
-    version = '2026.06.1',
+    version = '2026.06.3',
     author='Neuronum Cybernetics',
     author_email='welcome@neuronum.net',
     description='Neuronum SDK',
@@ -12,7 +12,7 @@ setup(
     project_urls={
         "GitHub": "https://github.com/neuronumcybernetics/neuronum-sdk-python",
     },
-    packages=find_packages(include=["neuronum", "cli"]),
+    packages=find_packages(include=["neuronum"]),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -21,19 +21,17 @@ setup(
     install_requires=[
         'aiohttp',
         'aiofiles',
-        'websockets',
         'click',
         'questionary',
-        'python-dotenv',
         'requests',
         'cryptography',
         'bip_utils',
-        'psutil',
-        'jinja2'
+        'fastmcp',
     ],
     entry_points={
         "console_scripts": [
-            "neuronum=cli.main:cli"
+            "neuronum=neuronum.cli:cli",
+            "neuronum-mcp=neuronum.mcp:main",
         ]
     },
     python_requires='>=3.8', 

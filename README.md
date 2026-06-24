@@ -23,9 +23,7 @@
 
 ### **About**
 
-Neuronum is a private data network that enables distributed AI agents to connect and communicate securely across devices with built-in end-to-end encryption, identity, routing, data mapping and delivery by simple function calls.
-
-You focus on building your agent's logic. Neuronum handles the rest.
+Neuronum enables business partners to connect their distributed AI agents and communicate across devices through a Secure Agent Session (SAS). The framework provides built‑in end‑to‑end encryption, identity management, and message delivery through simple function calls.
 
 > ⚠️ **Development Status:** The Neuronum SDK is currently in beta and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
 
@@ -89,122 +87,18 @@ neuronum delete-cell
 
 ------------------
 
-### **Agent**
-
-An Agent is any (AI) service that you build upon your Cell, exposing skills that other agents/cells can discover and call. Each agent has its own configuration, handles, and logic.
-
-**Initialize a new Agent:**
-```sh
-neuronum init-agent
-```
-Business cells can choose between two agent types:
-
-**Task Agent** — service-level agents that register on the Neuronum network, receive a unique `agent_id`, and are discoverable by other cells. The agent folder is named `agent_<agent_id>` and includes `agent.py`, `model.py`, and `agent.config`.
-
-**Business Agent** — compliance-level agents that run locally within your business infrastructure without network registration. The agent folder is named `business_agent` and includes `agent.py`, `model.py`, and `agent.html`.
-
-**agent.config** (inspired by Google's A2A protocol Agent Card)**:**
-```json
-{
-  "agent_meta": {
-    "agent_id": "019d8671-22c8-7a91-9fa7-8eb46d85969b",
-    "version": "1.0.0",
-    "name": "Q&A Agent",
-    "description": "An agent that returns answers to natural language prompts",
-    "audience": "private",
-    "logo": "https://neuronum.net/static/logo_new.png"
-  },
-  "skills": [
-    {
-      "handle": "get_answer",
-      "description": "Ask a question and get an answer.",
-      "examples": [
-        "What is the capital of France?",
-        "Explain quantum mechanics simply."
-      ],
-      "stream": false,
-      "input_schema": {
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "The user request"
-          },
-          "context": {
-            "type": "string",
-            "description": "Optional background information"
-          }
-        },
-        "required": [
-          "query"
-        ]
-      }
-    }
-  ],
-  "auth": ["api_key"],
-  "legals": {
-    "terms": "https://url_to_your/legals",
-    "privacy_policy": "https://url_to_your/legals"
-  }
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `agent_meta.agent_id` | Auto-generated. Do not change |
-| `agent_meta.version` | Version of your agent. Update as needed |
-| `agent_meta.name` | Display name of your agent |
-| `agent_meta.description` | What your agent does |
-| `agent_meta.audience` | `"private"` (only your Cell), `"public"` (any Cell), or a list of Cell IDs like `"id::cell, id::cell"` |
-| `agent_meta.logo` | URL to your agent's logo |
-| `skills` | List of skills your agent exposes. Add, remove, or modify as needed |
-| `skills[].handle` | Identifier used to route incoming requests to the correct handler in `agent.py` |
-| `skills[].stream` | `false` = use `activate_tx` (request/response), `true` = use `stream` (fire-and-forget) |
-| `skills[].description` | What the skill does |
-| `skills[].examples` | Example prompts or inputs |
-| `skills[].input_schema` | JSON Schema defining the expected input fields |
-| `auth` | Authentication parameters required to invoke the agent. Can be an empty array if no authentication is required |
-| `legals` | Links to your terms of service and privacy policy |
-
-**Start your Agent:**
-```sh
-neuronum start-agent
-```
-
-or
-
-```sh
-neuronum start-agent -d
-```
-
-**Stop your Agent:**
-```sh
-neuronum stop-agent
-```
-
-**Update your Agent** after changing an agent.config file:
-```sh
-neuronum update-agent
-```
-
-**Delete your Agent**
-```sh
-neuronum delete-agent
-```
-
-------------------
-
 ### **Methods**
 
-Cells interact using six methods:
+Cells interact using five methods:
 
 | Method | Description |
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
-| `list_agents()` | List all Agents built on Neuronum |
-| `stream(data, cell_id)` | Send data to a Cell (fire-and-forget) |
-| `activate_tx(data, cell_id)` | Send a request and wait for a response |
-| `sync()` | Listen for incoming transmissions |
-| `tx_response(tx_id, data, public_key)` | Send an encrypted response back |
+| `list_sessions()` | List your Secure Agent Sessions (SAS) |
+| `create_secure_agent_session(cell_id or email_address)` | Create and invite to a session |
+| `send_session_message(session_id, data)` | Send an encrypted message to a session |
+| `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
+
 
 All data is end-to-end encrypted. The network handles routing, key exchange, and delivery. You just send and receive.
 
@@ -212,7 +106,7 @@ All data is end-to-end encrypted. The network handles routing, key exchange, and
 
 ------------------
 
-### **Quick Example**
+### **Quick Examples**
 
 **List Cells**
 ```python
@@ -227,65 +121,59 @@ async def main():
 asyncio.run(main())
 ```
 
-**List Agents**
+**List Sessions**
 ```python
 import asyncio
 from neuronum import Cell
 
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
-        agents = await cell.list_agents()
-        print(agents)
+        sessions = await cell.list_sessions()
+        print(sessions)
 
 asyncio.run(main())
 ```
 
-**Stream data (fire-and-forget)**
+**Create a Secure Agent Session**
 ```python
 import asyncio
 from neuronum import Cell
 
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
-        await cell.stream(
-          {"msg": "Ping"},
-          "receiver_cell_id"
+        session = await cell.create_secure_agent_session(
+            receiver_cell_id="receiver.com::cell"
         )
+        print(session)
 
 asyncio.run(main())
 ```
 
-**Send data & wait for response**
+**Send a message to a session**
 ```python
 import asyncio
 from neuronum import Cell
 
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
-        tx_response = await cell.activate_tx(
-          {"msg": "Ping"},
-          "receiver_cell_id"
+        success = await cell.send_session_message(
+            "session_id",
+            {"msg": "Hello"}
         )
-        print(tx_response)
+        print(success)
 
 asyncio.run(main())
 ```
 
-**Receive data & send response**
+**Fetch messages from a session**
 ```python
 import asyncio
 from neuronum import Cell
 
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
-        async for tx in cell.sync():
-            data = tx.get("data", {})
-
-            await cell.tx_response(
-                tx.get("tx_id"),
-                {"msg": "Pong"},
-                data.get("public_key", "")
-            )
+        async for tx in cell.get_session_messages("session_id"):
+            print(tx)
 
 asyncio.run(main())
 ```
@@ -294,14 +182,14 @@ asyncio.run(main())
 
 ### **TX (Transmitter) Object**
 
-When you receive data via `sync()`, each transmission arrives as a TX object:
+When you fetch data via `get_session_messages`, each payload arrives as a TX object:
 ```python
 {
     "tx_id": "bfd2a0d009c6f784ec97c41d3738a24e0e5ac8f1",
     "time": "1772923393",
-    "sender": "1uRQdV593S91E3T2-Vj_29mxBJoI7Cvxxg6dNFDVfv4::cell",
+    "sender": "acme.com::cell",
     "data": {
-        "msg": "Ping",
+        "msg": "Hello World!",
         "public_key": "-----BEGIN PUBLIC KEY-----\n..."
     }
 }
@@ -312,8 +200,14 @@ When you receive data via `sync()`, each transmission arrives as a TX object:
 | `tx_id` | Unique payload ID generated from the encrypted data context and timestamp |
 | `time` | Unix timestamp of the transmission |
 | `sender` | The sender's Cell ID |
-| `data` | The decrypted payload, including the sender's public key for responding via `tx_response()` |
+| `data` | The decrypted payload, including the sender's public key |
 
+------------------
+
+### **Neuronum MCP Server**
+```sh
+neuronum neuronum start-mcp
+```
 ------------------
 
 ### **Full Documentation**

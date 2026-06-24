@@ -1,23 +1,21 @@
 import aiohttp
 import aiofiles
 from typing import AsyncGenerator, Optional, Dict, Any, List
-import websockets
 import json
 import asyncio
 import base64
-import ssl
 import os
 import time
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from websockets.exceptions import ConnectionClosed, WebSocketException
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 from abc import ABC, abstractmethod
+
 
 # Logging Configuration
 logging.basicConfig(
@@ -405,7 +403,8 @@ class BaseClient(ABC):
                     return public_key
         
         raise CellNotFoundError(f"Cell not found: {cell_id}")
-    
+
+
     async def list_cells(self, update: bool = False) -> List[Dict[str, Any]]:
         """List all available cells with optional cache refresh"""
         if not update:
@@ -425,226 +424,193 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch cells: {e}")
             return []
         
-    async def list_agents(self) -> List[Dict[str, Any]]:
-        """List all available agents"""
 
-        full_url = f"https://{self.network}/api/list_agents"
-        payload = {"cell": self.to_dict()}
+    async def _fetch_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch session metadata from list_sessions."""
+        sessions = await self.list_sessions()
+        for s in sessions:
+            if s.get("session_id") == session_id:
+                return s
+        return None
+
+
+    async def list_sessions(self) -> List[Dict[str, Any]]:
+        """List all secure cell sessions for this cell."""
         
+        full_url = f"https://{self.network}/api/list_sessions"
+        payload = {"cell": self.to_dict()}
+
         try:
             data = await self._network_client.post_request(full_url, payload)
-            agents = data.get("Agents", []) if data else []
-            return agents
+            sessions = data.get("Sessions", []) if data else []
+            return sessions
         except NetworkError as e:
-            logger.error(f"Failed to fetch cells: {e}")
+            logger.error(f"Failed to fetch sessions: {e}")
             return []
-        
-    async def tx_response(
-        self,
-        tx_id: str,
-        data: Dict[str, Any],
-        client_public_key_str: str
-    ) -> None:
-        """Send encrypted response to transmitter"""
-        if not self._crypto:
-            raise EncryptionError("Crypto manager not initialized")
-        
-        if not client_public_key_str:
-            raise ValueError("client_public_key_str is required")
-        
-        url = f"https://{self.network}/api/tx_response/{tx_id}"
-        
-        public_key = self._crypto.load_public_key_from_pem(client_public_key_str)
-        encrypted_payload = self._crypto.encrypt_with_ecdh_aesgcm(public_key, data)
-        payload = {"data": encrypted_payload, "cell": self.to_dict()}
-        
-        await self._network_client.post_request(url, payload)
-        logger.info(f"Response sent to transmitter {tx_id}")
+
+    async def create_secure_agent_session(self, receiver_cell_id: str = None, receiver_email: str = None) -> Optional[Dict[str, Any]]:
+        """Create a secure B2B session using either a cell_id or an email."""
+
+        if not receiver_cell_id and not receiver_email:
+            raise ValueError("You must provide either receiver_cell_id or receiver_email")
+
+        if receiver_cell_id and receiver_email:
+            raise ValueError("Provide only one: receiver_cell_id OR receiver_email")
+
+        full_url = f"https://{self.network}/api/create_secure_agent_session"
+
+        payload = {
+            "cell": self.to_dict(),
+            "receiver_cell_id": receiver_cell_id,
+            "receiver_email": receiver_email
+        }
+
+        try:
+            data = await self._network_client.post_request(full_url, payload)
+            return data
+        except NetworkError as e:
+            logger.error(f"Failed to create secure cell session: {e}")
+            return None
+
     
-    async def activate_tx(
-        self,
-        data: Dict[str, Any],
-        cell_id: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
-        """Activate encrypted transaction with cell and return decrypted response"""
-        if not self._crypto:
-            raise EncryptionError("Crypto manager not initialized")
-
-        if cell_id is None:
-            cell_id = self.host
-
-        url = f"https://{self.network}/api/activate_tx/{cell_id}"
-        payload = {"cell": self.to_dict()}
-
-        public_key_pem_str = await self._get_target_cell_public_key(cell_id)
-        public_key_object = self._crypto.load_public_key_from_pem(public_key_pem_str)
-        data_to_encrypt = data.copy()
-        data_to_encrypt["public_key"] = self._crypto.get_public_key_pem()
-        encrypted_payload = self._crypto.encrypt_with_ecdh_aesgcm(
-            public_key_object, 
-            data_to_encrypt
-        )
-        payload["data"] = {"encrypted": encrypted_payload}
+    async def get_session_messages(self, session_id: str) -> AsyncGenerator[Dict[str, Any], None]:
+        """Fetch and decrypt all messages for a session."""
         
-        response_data = await self._network_client.post_request(url, payload)
-        
-        if not response_data or "response" not in response_data:
-            logger.warning("Unexpected or missing response")
-            return response_data
-
-        inner_response = response_data["response"]
-
-        if "ciphertext" in inner_response:
-            try:
-                ephemeral_public_key_bytes = CryptoManager.safe_b64decode(
-                    inner_response["ephemeralPublicKey"]
-                )
-                nonce = CryptoManager.safe_b64decode(inner_response["nonce"])
-                ciphertext = CryptoManager.safe_b64decode(inner_response["ciphertext"])
-                
-                return self._crypto.decrypt_with_ecdh_aesgcm(
-                    ephemeral_public_key_bytes, nonce, ciphertext
-                )
-            except EncryptionError:
-                logger.error("Failed to decrypt response")
-                return None
-        else:
-            logger.debug("Received unencrypted response")
-            return inner_response
-    
-    async def sync(self) -> AsyncGenerator[Dict[str, Any], None]:
-        """Sync with network and yield operations as they arrive"""
         if not isinstance(self, Cell):
-            raise ValueError("sync must be called from a Cell instance")
-
-        cell = getattr(self, 'host', None)
-        if not cell:
-            raise ValueError("host is required for Cell sync")
-
-        full_url = f"wss://{self.network}/sync/{cell}"
-
-        logger.info(f"Starting sync with {cell}")
-
-        retry_count = 0
-        while True:
-            try:
-                auth_payload = self.to_dict()
-
-                ssl_context = ssl.create_default_context()
-
-                async with websockets.connect(
-                    full_url,
-                    ssl=ssl_context,
-                    ping_interval=self.config.websocket_ping_interval,
-                    ping_timeout=self.config.websocket_ping_timeout,
-                    close_timeout=10
-                ) as ws:
-                    await ws.send(json.dumps(auth_payload))
-                    logger.info(f"Connected and authenticated to {cell}")
-                    retry_count = 0
-
-                    while True:
-                        try:
-                            raw_operation = await asyncio.wait_for(
-                                ws.recv(),
-                                timeout=self.config.timeout
-                            )
-                            operation = json.loads(raw_operation)
-
-                            if "encrypted" in operation.get("data", {}):
-                                encrypted_data = operation["data"]["encrypted"]
-
-                                try:
-                                    ephemeral_public_key_bytes = CryptoManager.safe_b64decode(
-                                        encrypted_data["ephemeralPublicKey"]
-                                    )
-                                    nonce = CryptoManager.safe_b64decode(
-                                        encrypted_data["nonce"]
-                                    )
-                                    ciphertext = CryptoManager.safe_b64decode(
-                                        encrypted_data["ciphertext"]
-                                    )
-
-                                    decrypted_data = self._crypto.decrypt_with_ecdh_aesgcm(
-                                        ephemeral_public_key_bytes, nonce, ciphertext
-                                    )
-
-                                    operation["data"].update(decrypted_data)
-                                    operation["data"].pop("encrypted")
-                                    yield operation
-                                except EncryptionError:
-                                    logger.error("Failed to decrypt operation")
-                            else:
-                                logger.warning("Received unencrypted data")
-
-                        except asyncio.TimeoutError:
-                            continue
-                        except ConnectionClosed as e:
-                            logger.warning(f"Connection closed: {e.code} - {e.reason}")
-                            break
-                        except Exception as e:
-                            logger.error(f"Error in receive loop: {e}")
-                            break
-
-            except WebSocketException as e:
-                logger.error(f"WebSocket error: {e}")
-            except Exception as e:
-                logger.error(f"General error in sync: {e}")
-
-            retry_count += 1
-            delay = 5.0
-            logger.info(f"Reconnecting in {delay}s (attempt {retry_count})")
-            await asyncio.sleep(delay)
-
-    async def stream(self, data: Dict[str, Any], cell_id: Optional[str] = None) -> bool:
-        """Stream encrypted data to target cell via WebSocket"""
-        if not isinstance(self, Cell):
-            raise ValueError("stream must be called from a Cell instance")
+            raise ValueError("sync_session_messages must be called from an Cell instance")
 
         if not getattr(self, 'host', None):
-            raise ValueError("host is required for Cell stream")
+            raise ValueError("host is required for sync_session_messages")
 
         if not self._crypto:
             raise EncryptionError("Crypto manager not initialized")
 
-        if cell_id is None:
-            cell_id = self.host
+        full_url = f"https://{self.network}/api/get_session_messages/{session_id}"
+        payload = {"cell": self.to_dict()}
 
-        public_key_pem_str = await self._get_target_cell_public_key(cell_id)
-        public_key_object = self._crypto.load_public_key_from_pem(public_key_pem_str)
-        data_to_encrypt = data.copy()
-        data_to_encrypt["public_key"] = self._crypto.get_public_key_pem()
-        encrypted_payload = self._crypto.encrypt_with_ecdh_aesgcm(
-            public_key_object, 
-            data_to_encrypt
-        )
-        
-        auth_payload = self.to_dict()
-        data_payload = {"data": {"encrypted": encrypted_payload}}
-        send_payload = {**auth_payload, **data_payload}
-        
-        full_url = f"wss://{self.network}/stream/{cell_id}"
-        
         try:
-            ssl_context = ssl.create_default_context()
-            async with websockets.connect(full_url, ssl=ssl_context) as ws:
-                await ws.send(json.dumps(send_payload))
-                logger.info(f"Data streamed to {cell_id}")
-                
+            # 1) Fetch encrypted messages
+            data = await self._network_client.post_request(full_url, payload)
+            messages = data.get("Messages", []) if data else []
+
+            # 2) Iterate and decrypt only messages intended for this cell
+            for msg in messages:
+                ciphertext = msg.get("ciphertext")
+                if not ciphertext:
+                    continue
+
                 try:
-                    ack = await asyncio.wait_for(ws.recv(), timeout=2)
-                    logger.debug(f"Server acknowledgment: {ack}")
-                except asyncio.TimeoutError:
-                    logger.debug("No immediate acknowledgment (data sent)")
-                except Exception as e:
-                    logger.warning(f"Error reading acknowledgment: {e}")
-                
-                return True
-        except WebSocketException as e:
-            logger.error(f"WebSocket error during stream: {e}")
+                    # Extract fields
+                    ephemeral_public_key_bytes = CryptoManager.safe_b64decode(
+                        ciphertext["ephemeralPublicKey"]
+                    )
+                    nonce = CryptoManager.safe_b64decode(ciphertext["nonce"])
+                    ct = CryptoManager.safe_b64decode(ciphertext["ciphertext"])
+
+                    # Attempt decryption
+                    decrypted = self._crypto.decrypt_with_ecdh_aesgcm(
+                        ephemeral_public_key_bytes,
+                        nonce,
+                        ct
+                    )
+
+                    # Build final message object
+                    yield {
+                        "tx_id": msg["tx_id"],
+                        "time": msg["time"],
+                        "sender": msg["sender"],
+                        "data": decrypted
+                    }
+
+                except EncryptionError:
+                    # Message was not encrypted for this cell → skip
+                    continue
+
+        except NetworkError as e:
+            logger.error(f"Failed to sync session messages: {e}")
+            return
+
+
+    async def send_session_message(self, session_id: str, data: Dict[str, Any]) -> bool:
+        """Send an encrypted message to a secure cell session."""
+        
+        if not isinstance(self, Cell):
+            raise ValueError("send_session_message must be called from an Cell instance")
+
+        if not getattr(self, 'host', None):
+            raise ValueError("host is required for send_session_message")
+
+        if not self._crypto:
+            raise EncryptionError("Crypto manager not initialized")
+
+        # 1) Fetch session details from server
+        #    (to know who the other participant is)
+        session = await self._fetch_session_metadata(session_id)
+        if not session:
+            logger.error(f"Session not found: {session_id}")
             return False
-        except Exception as e:
-            logger.error(f"Error during stream: {e}")
+
+        requester = session["requester_cell_id"]
+        receiver = session["receiver_cell_id"]
+
+        # 2) Determine the other participant
+        if self.host == requester:
+            other_cell_id = receiver
+        elif self.host == receiver:
+            other_cell_id = requester
+        else:
+            raise ValueError("This cell is not part of the session")
+
+        # 3) Load public keys
+        sender_public_key_pem = self._crypto.get_public_key_pem()
+
+        # Web-based sessions: receiver has no cell — their public key is stored in
+        # session metadata after their first message. Cell IDs always end in "::cell".
+        if other_cell_id.endswith("::cell"):
+            receiver_public_key_pem = await self._get_target_cell_public_key(other_cell_id)
+        else:
+            receiver_public_key_pem = session.get("receiver_public_key")
+            if not receiver_public_key_pem:
+                logger.error(f"No receiver public key in session metadata yet for session {session_id}")
+                return False
+
+        sender_public_key = self._crypto.load_public_key_from_pem(sender_public_key_pem)
+        receiver_public_key = self._crypto.load_public_key_from_pem(receiver_public_key_pem)
+
+        # 4) Encrypt twice (sender + receiver)
+        cipher_for_sender = self._crypto.encrypt_with_ecdh_aesgcm(
+            sender_public_key,
+            data
+        )
+
+        cipher_for_receiver = self._crypto.encrypt_with_ecdh_aesgcm(
+            receiver_public_key,
+            data
+        )
+
+        # 5) Build payload
+        payload = {
+            "cell": self.to_dict(),
+            "data": {
+                "cipher_for_sender": cipher_for_sender,
+                "cipher_for_receiver": cipher_for_receiver
+            }
+        }
+
+        # 6) Send to server
+        full_url = f"https://{self.network}/api/send_session_message/{session_id}"
+
+        try:
+            response = await self._network_client.post_request(full_url, payload)
+            if response and response.get("success"):
+                logger.info(f"Message sent to session {session_id}")
+                return True
+            else:
+                logger.error(f"Failed to send message: {response}")
+                return False
+
+        except NetworkError as e:
+            logger.error(f"Network error sending session message: {e}")
             return False
 
 

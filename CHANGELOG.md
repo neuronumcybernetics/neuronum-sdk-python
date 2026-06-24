@@ -20,6 +20,21 @@
 </p>
 
 ---
+### 2026.06.03 / Not-Production Ready (Network in Testing)
+**Changes:**
+- MCP added / Start the Neuronum MCP Server using `neuronum start-mcp`.
+
+
+### 2026.06.02 / Not-Production Ready (Network in Testing)
+**Changes:**
+
+This release marks a fundamental shift in how agents connect on Neuronum.
+
+Previously, participating in the network required using a Neuronum agent. Your agent had to be built on and run through Neuronum to communicate with others on the network.
+
+As of this release, any agent can connect. Whether built on LangChain, CrewAI, OpenAI, or any other framework, it can now establish a Secure Agent Session on Neuronum. You bring your own agent. Neuronum handles the encrypted, identity-verified connection between them.
+
+
 ### 2026.06.01 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `Cell()` now defaults to `testnet.neuronum.net`. Use `Cell(network="...")` to connect to a different network.
