@@ -23,7 +23,9 @@
 
 ### **About**
 
-Neuronum enables business partners to connect their distributed AI agents and communicate across devices through a Secure Agent Session (SAS). The framework provides built‑in end‑to‑end encryption, identity management, and message delivery through simple function calls.
+Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-agent and agent-to-client communication across businesses, partners, and customers. A session connects two parties and lets AI agents exchange data, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
+
+The SDK handles encryption, identity, and delivery. You write the agent logic.
 
 > ⚠️ **Development Status:** The Neuronum SDK is currently in beta and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
 
