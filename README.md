@@ -97,7 +97,7 @@ Cells interact using five methods:
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
-| `create_secure_agent_session(cell_id or email_address)` | Create and invite to a session |
+| `create_secure_agent_session(receiver_cell_id or receiver_email)` | Create and invite to a session |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
 
