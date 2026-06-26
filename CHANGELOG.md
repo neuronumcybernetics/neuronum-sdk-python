@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.06.06 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `instruct` key added to `create_secure_agent_session`.
+
 ### 2026.06.05 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `mcp.py` updated to support email only.

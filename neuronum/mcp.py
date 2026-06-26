@@ -4,6 +4,7 @@ Neuronum MCP server (FastMCP).
 Exposes Neuronum Cell methods as MCP tools:
   - list_cells:                  list cells visible to this cell
   - list_sessions:               list all secure agent sessions for this cell
+  - fetch_session_metadata:      fetch metadata for a specific session
   - get_session_messages:        fetch and decrypt messages for a session
   - create_secure_agent_session: open a new secure agent session
   - send_session_message:        send an encrypted message to a session
@@ -71,6 +72,21 @@ async def list_sessions(ctx: Context) -> list[dict[str, Any]]:
 
 
 @mcp.tool
+async def fetch_session_metadata(ctx: Context, session_id: str) -> dict[str, Any]:
+    """Fetch metadata for a specific secure agent session.
+
+    Args:
+        session_id: The ID of the session to retrieve metadata for.
+
+    Returns:
+        Session metadata dict, or an empty dict if not found.
+    """
+    cell: Cell = ctx.lifespan_context.cell
+    result = await cell.fetch_session_metadata(session_id)
+    return result or {}
+
+
+@mcp.tool
 async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, Any]]:
     """Fetch and decrypt all messages for a secure agent session.
 
@@ -93,19 +109,22 @@ async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, 
 @mcp.tool
 async def create_secure_agent_session(
     ctx: Context,
+    instruct: str,
     email: str,
 ) -> dict[str, Any]:
-    """Create a secure agent session and send an invitation via email.
+    """Instruct your agent, create a secure agent session and send an invitation via email.
 
     Args:
         email:   The email address of the receiver.
+        instruct:   Set specific goals, conversation context or further instructions
 
     Returns:
         Session metadata returned by the server.
     """
     cell: Cell = ctx.lifespan_context.cell
     result = await cell.create_secure_agent_session(
-        email=email,
+        instruct=instruct,
+        email=email
     )
     return result or {}
 

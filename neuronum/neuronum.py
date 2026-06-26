@@ -384,7 +384,7 @@ class BaseClient(ABC):
         }
     
 
-    async def _fetch_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def fetch_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Fetch session metadata from list_sessions."""
         sessions = await self.list_sessions()
         for s in sessions:
@@ -427,16 +427,20 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch sessions: {e}")
             return []
 
-    async def create_secure_agent_session(self, email: str) -> Optional[Dict[str, Any]]:
+    async def create_secure_agent_session(self, instruct: str, email: str) -> Optional[Dict[str, Any]]:
         """Create a secure B2B session using either a cell_id or an email."""
 
         if not email:
             raise ValueError("You must provide an email")
+        
+        if not instruct:
+            raise ValueError("You must provide an instruct")
 
         full_url = f"https://{self.network}/api/create_secure_agent_session"
 
         payload = {
             "cell": self.to_dict(),
+            "instruct": instruct,
             "email": email
         }
 
@@ -520,7 +524,7 @@ class BaseClient(ABC):
 
         # 1) Fetch session details from server
         #    (to know who the other participant is)
-        session = await self._fetch_session_metadata(session_id)
+        session = await self.fetch_session_metadata(session_id)
         if not session:
             logger.error(f"Session not found: {session_id}")
             return False

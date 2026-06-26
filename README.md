@@ -97,7 +97,7 @@ Cells interact using five methods:
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
-| `create_secure_agent_session(email)` | Create and invite to a session via email |
+| `create_secure_agent_session(instruct, email)` | Set agent instructions, create and invite to a session via email |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
 
@@ -144,6 +144,7 @@ from neuronum import Cell
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
         session = await cell.create_secure_agent_session(
+            instruct="Set specific goals, conversation context or further instructions"
             email="your@email.com"
         )
         print(session)
