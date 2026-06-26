@@ -144,7 +144,7 @@ from neuronum import Cell
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
         session = await cell.create_secure_agent_session(
-            email="receiver.com::cell"
+            email="your@email.com"
         )
         print(session)
 
