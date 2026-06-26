@@ -23,7 +23,7 @@
 
 ### **About**
 
-Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-agent and agent-to-client communication across businesses, partners, and customers. A session connects two parties and lets AI agents exchange data, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
+Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-client communication across businesses, partners, and customers. A session connects two parties and lets AI agents exchange data, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
 
 The SDK handles encryption, identity, and delivery. You write the agent logic.
 
@@ -97,7 +97,7 @@ Cells interact using five methods:
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
-| `create_secure_agent_session(receiver_cell_id or receiver_email)` | Create and invite to a session |
+| `create_secure_agent_session(email)` | Create and invite to a session via email |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
 
@@ -144,7 +144,7 @@ from neuronum import Cell
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
         session = await cell.create_secure_agent_session(
-            receiver_cell_id="receiver.com::cell"
+            email="receiver.com::cell"
         )
         print(session)
 

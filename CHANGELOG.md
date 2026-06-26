@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.06.04 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `create_secure_agent_session` changed to email support only.
+
 ### 2026.06.03 / Not-Production Ready (Network in Testing)
 **Changes:**
 - MCP added / Start the Neuronum MCP Server using `neuronum start-mcp`.

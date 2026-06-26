@@ -448,21 +448,17 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch sessions: {e}")
             return []
 
-    async def create_secure_agent_session(self, receiver_cell_id: str = None, receiver_email: str = None) -> Optional[Dict[str, Any]]:
+    async def create_secure_agent_session(self, email: str) -> Optional[Dict[str, Any]]:
         """Create a secure B2B session using either a cell_id or an email."""
 
-        if not receiver_cell_id and not receiver_email:
-            raise ValueError("You must provide either receiver_cell_id or receiver_email")
-
-        if receiver_cell_id and receiver_email:
-            raise ValueError("Provide only one: receiver_cell_id OR receiver_email")
+        if not email:
+            raise ValueError("You must provide an email")
 
         full_url = f"https://{self.network}/api/create_secure_agent_session"
 
         payload = {
             "cell": self.to_dict(),
-            "receiver_cell_id": receiver_cell_id,
-            "receiver_email": receiver_email
+            "email": email
         }
 
         try:
