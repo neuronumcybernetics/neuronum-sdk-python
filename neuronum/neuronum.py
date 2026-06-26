@@ -383,27 +383,15 @@ class BaseClient(ABC):
             "message": message
         }
     
-    async def _get_target_cell_public_key(self, cell_id: str) -> str:
-        """Get public key for target cell"""
-        cells = await self.list_cells(update=False)
 
-        for cell in cells:
-            if cell.get('cell_id') == cell_id:
-                public_key = cell.get('public_key', {})
-                if public_key:
-                    return public_key
-
-        logger.info(f"Cell {cell_id} not in cache, refreshing")
-        cells = await self.list_cells(update=True)
-        
-        for cell in cells:
-            if cell.get('cell_id') == cell_id:
-                public_key = cell.get('public_key', {})
-                if public_key:
-                    return public_key
-        
-        raise CellNotFoundError(f"Cell not found: {cell_id}")
-
+    async def _fetch_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch session metadata from list_sessions."""
+        sessions = await self.list_sessions()
+        for s in sessions:
+            if s.get("session_id") == session_id:
+                return s
+        return None
+    
 
     async def list_cells(self, update: bool = False) -> List[Dict[str, Any]]:
         """List all available cells with optional cache refresh"""
@@ -423,15 +411,6 @@ class BaseClient(ABC):
         except NetworkError as e:
             logger.error(f"Failed to fetch cells: {e}")
             return []
-        
-
-    async def _fetch_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch session metadata from list_sessions."""
-        sessions = await self.list_sessions()
-        for s in sessions:
-            if s.get("session_id") == session_id:
-                return s
-        return None
 
 
     async def list_sessions(self) -> List[Dict[str, Any]]:
@@ -546,34 +525,17 @@ class BaseClient(ABC):
             logger.error(f"Session not found: {session_id}")
             return False
 
-        requester = session["requester_cell_id"]
-        receiver = session["receiver_cell_id"]
-
-        # 2) Determine the other participant
-        if self.host == requester:
-            other_cell_id = receiver
-        elif self.host == receiver:
-            other_cell_id = requester
-        else:
-            raise ValueError("This cell is not part of the session")
-
-        # 3) Load public keys
+        # 2) Load public keys
         sender_public_key_pem = self._crypto.get_public_key_pem()
-
-        # Web-based sessions: receiver has no cell — their public key is stored in
-        # session metadata after their first message. Cell IDs always end in "::cell".
-        if other_cell_id.endswith("::cell"):
-            receiver_public_key_pem = await self._get_target_cell_public_key(other_cell_id)
-        else:
-            receiver_public_key_pem = session.get("receiver_public_key")
-            if not receiver_public_key_pem:
-                logger.error(f"No receiver public key in session metadata yet for session {session_id}")
-                return False
+        receiver_public_key_pem = session.get("receiver_public_key")
+        if not receiver_public_key_pem:
+            logger.error(f"No receiver public key in session metadata yet for session {session_id}")
+            return False
 
         sender_public_key = self._crypto.load_public_key_from_pem(sender_public_key_pem)
         receiver_public_key = self._crypto.load_public_key_from_pem(receiver_public_key_pem)
 
-        # 4) Encrypt twice (sender + receiver)
+        # 3) Encrypt twice (sender + receiver)
         cipher_for_sender = self._crypto.encrypt_with_ecdh_aesgcm(
             sender_public_key,
             data
@@ -584,7 +546,7 @@ class BaseClient(ABC):
             data
         )
 
-        # 5) Build payload
+        # 4) Build payload
         payload = {
             "cell": self.to_dict(),
             "data": {
@@ -593,7 +555,7 @@ class BaseClient(ABC):
             }
         }
 
-        # 6) Send to server
+        # 5) Send to server
         full_url = f"https://{self.network}/api/send_session_message/{session_id}"
 
         try:

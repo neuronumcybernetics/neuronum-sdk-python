@@ -23,7 +23,7 @@
 
 ### **About**
 
-Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-client communication across businesses, partners, and customers. A session connects two parties and lets AI agents exchange data, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
+Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-client communication across businesses, partners, and customers. A session connects two parties and lets the host's agent handle data exchange, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
 
 The SDK handles encryption, identity, and delivery. You write the agent logic.
 

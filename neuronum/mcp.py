@@ -3,9 +3,9 @@ Neuronum MCP server (FastMCP).
 
 Exposes Neuronum Cell methods as MCP tools:
   - list_cells:                  list cells visible to this cell
-  - list_sessions:               list all secure sessions for this cell
+  - list_sessions:               list all secure agent sessions for this cell
   - get_session_messages:        fetch and decrypt messages for a session
-  - create_secure_agent_session: open a new secure B2B session
+  - create_secure_agent_session: open a new secure agent session
   - send_session_message:        send an encrypted message to a session
 
 Install the optional MCP extra to use this:
@@ -61,7 +61,7 @@ async def list_cells(ctx: Context, update: bool = False) -> list[dict[str, Any]]
 
 @mcp.tool
 async def list_sessions(ctx: Context) -> list[dict[str, Any]]:
-    """List all secure cell sessions for this cell.
+    """List all secure agent sessions for this cell.
 
     Returns a list of session metadata dicts, each containing at minimum
     session_id, requester_cell_id, and receiver_cell_id.
@@ -72,7 +72,7 @@ async def list_sessions(ctx: Context) -> list[dict[str, Any]]:
 
 @mcp.tool
 async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, Any]]:
-    """Fetch and decrypt all messages for a secure session.
+    """Fetch and decrypt all messages for a secure agent session.
 
     Only messages encrypted for this cell are returned; messages encrypted
     for the other participant are silently skipped.
@@ -93,24 +93,19 @@ async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, 
 @mcp.tool
 async def create_secure_agent_session(
     ctx: Context,
-    receiver_cell_id: str | None = None,
-    receiver_email: str | None = None,
+    email: str,
 ) -> dict[str, Any]:
-    """Create a secure B2B session with another cell.
-
-    Provide exactly one of receiver_cell_id or receiver_email.
+    """Create a secure agent session and send an invitation via email.
 
     Args:
-        receiver_cell_id: The cell ID of the receiver (e.g. "example.neuronum.net::cell").
-        receiver_email:   The email address of the receiver.
+        email:   The email address of the receiver.
 
     Returns:
         Session metadata returned by the server.
     """
     cell: Cell = ctx.lifespan_context.cell
     result = await cell.create_secure_agent_session(
-        receiver_cell_id=receiver_cell_id,
-        receiver_email=receiver_email,
+        email=email,
     )
     return result or {}
 
@@ -121,7 +116,7 @@ async def send_session_message(
     session_id: str,
     data: dict[str, Any],
 ) -> dict[str, Any]:
-    """Send an encrypted message to a secure cell session.
+    """Send an encrypted message to a secure agent session.
 
     The payload is end-to-end encrypted (ECDH + AES-GCM) for both the
     sender and the receiver before it leaves this machine.

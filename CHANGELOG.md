@@ -20,6 +20,11 @@
 </p>
 
 ---
+### 2026.06.05 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `mcp.py` updated to support email only.
+- `neuronum.py` updated to support email only.
+
 ### 2026.06.04 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `create_secure_agent_session` changed to email support only.
