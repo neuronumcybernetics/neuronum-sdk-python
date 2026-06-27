@@ -100,9 +100,7 @@ async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, 
         A list of decrypted message dicts with keys: tx_id, time, sender, data.
     """
     cell: Cell = ctx.lifespan_context.cell
-    messages = []
-    async for msg in cell.get_session_messages(session_id):
-        messages.append(msg)
+    messages = await cell.get_session_messages(session_id)
     return messages
 
 
@@ -110,23 +108,36 @@ async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, 
 async def create_secure_agent_session(
     ctx: Context,
     instruct: str,
-    email: str,
+    email: str | None = None,
+    cell_id: str | None = None,
 ) -> dict[str, Any]:
-    """Instruct your agent, create a secure agent session and send an invitation via email.
+    """
+    Instruct your agent, create a secure agent session and send an invitation.
 
     Args:
-        email:   The email address of the receiver.
-        instruct:   Set specific goals, conversation context or further instructions
+        email: Optional email address of the receiver.
+        cell_id: Optional cell_id of the receiver.
+        instruct: Instructions or goals for the agent.
 
     Returns:
         Session metadata returned by the server.
     """
+
+    if not email and not cell_id:
+        raise ValueError("Either email or cell_id must be provided.")
+    if email and cell_id:
+        raise ValueError("Only one of email or cell_id may be provided, not both.")
+
     cell: Cell = ctx.lifespan_context.cell
+
     result = await cell.create_secure_agent_session(
         instruct=instruct,
-        email=email
+        email=email,
+        cell_id=cell_id,
     )
+
     return result or {}
+
 
 
 @mcp.tool

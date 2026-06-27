@@ -437,11 +437,13 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch sessions: {e}")
             return []
 
-    async def create_secure_agent_session(self, instruct: str, email: str) -> Optional[Dict[str, Any]]:
+    async def create_secure_agent_session(self, instruct: str, email: str | None = None, cell_id: str | None = None) -> Optional[Dict[str, Any]]:
         """Create a secure B2B session using either a cell_id or an email."""
 
-        if not email:
-            raise ValueError("You must provide an email")
+        if not email and not cell_id:
+            raise ValueError("Either email or cell_id must be provided.")
+        if email and cell_id:
+            raise ValueError("Only one of email or cell_id may be provided, not both.")
 
         if not instruct:
             raise ValueError("You must provide an instruct")
@@ -454,7 +456,8 @@ class BaseClient(ABC):
         payload = {
             "cell": self.to_dict(),
             "instruct": encrypted_instruct,
-            "email": email
+            "email": email,
+            "cell_id": cell_id,
         }
 
         try:
@@ -465,9 +468,9 @@ class BaseClient(ABC):
             return None
 
     
-    async def get_session_messages(self, session_id: str) -> AsyncGenerator[Dict[str, Any], None]:
+    async def get_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Fetch and decrypt all messages for a session."""
-        
+
         if not isinstance(self, Cell):
             raise ValueError("sync_session_messages must be called from an Cell instance")
 
@@ -480,47 +483,110 @@ class BaseClient(ABC):
         full_url = f"https://{self.network}/api/get_session_messages/{session_id}"
         payload = {"cell": self.to_dict()}
 
+        result = []
         try:
-            # 1) Fetch encrypted messages
             data = await self._network_client.post_request(full_url, payload)
             messages = data.get("Messages", []) if data else []
 
-            # 2) Iterate and decrypt only messages intended for this cell
             for msg in messages:
                 ciphertext = msg.get("ciphertext")
                 if not ciphertext:
                     continue
 
                 try:
-                    # Extract fields
                     ephemeral_public_key_bytes = CryptoManager.safe_b64decode(
                         ciphertext["ephemeralPublicKey"]
                     )
                     nonce = CryptoManager.safe_b64decode(ciphertext["nonce"])
                     ct = CryptoManager.safe_b64decode(ciphertext["ciphertext"])
 
-                    # Attempt decryption
                     decrypted = self._crypto.decrypt_with_ecdh_aesgcm(
                         ephemeral_public_key_bytes,
                         nonce,
                         ct
                     )
 
-                    # Build final message object
-                    yield {
+                    result.append({
                         "tx_id": msg["tx_id"],
                         "time": msg["time"],
                         "sender": msg["sender"],
                         "data": decrypted
-                    }
+                    })
 
                 except EncryptionError:
-                    # Message was not encrypted for this cell → skip
                     continue
 
         except NetworkError as e:
             logger.error(f"Failed to sync session messages: {e}")
-            return
+
+        return result
+
+
+    async def sync_messages(self) -> AsyncGenerator[Dict[str, Any], None]:
+        """Stream and decrypt real-time messages from all sessions via SSE."""
+
+        if not isinstance(self, Cell):
+            raise ValueError("sync_messages must be called from a Cell instance")
+
+        if not getattr(self, 'host', None):
+            raise ValueError("host is required for sync_messages")
+
+        if not self._crypto:
+            raise EncryptionError("Crypto manager not initialized")
+
+        full_url = f"https://{self.network}/api/sync_messages"
+        payload = self.to_dict()
+
+        try:
+            sse_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
+            logger.info(f"SSE connecting to {full_url}")
+            async with sse_session.post(full_url, json={"cell": payload}) as response:
+                logger.info(f"SSE response status: {response.status} headers: {dict(response.headers)}")
+                response.raise_for_status()
+                logger.info("SSE stream open, waiting for events...")
+                async for raw_chunk in response.content.iter_any():
+                    for line in raw_chunk.decode("utf-8").splitlines():
+                        line = line.strip()
+                        if not line.startswith("data:"):
+                            continue
+                        json_str = line[len("data:"):].strip()
+                        if not json_str:
+                            continue
+                        try:
+                            msg = json.loads(json_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        is_sender = msg.get("sender") == self.host
+                        cipher_key = "cipher_for_sender" if is_sender else "cipher_for_receiver"
+                        ciphertext = msg.get(cipher_key)
+                        if not ciphertext:
+                            continue
+
+                        try:
+                            ephemeral_public_key_bytes = CryptoManager.safe_b64decode(
+                                ciphertext["ephemeralPublicKey"]
+                            )
+                            nonce = CryptoManager.safe_b64decode(ciphertext["nonce"])
+                            ct = CryptoManager.safe_b64decode(ciphertext["ciphertext"])
+                            decrypted = self._crypto.decrypt_with_ecdh_aesgcm(
+                                ephemeral_public_key_bytes, nonce, ct
+                            )
+                            yield {
+                                "session_id": msg.get("session_id"),
+                                "tx_id": msg.get("tx_id"),
+                                "time": msg.get("time"),
+                                "sender": msg.get("sender"),
+                                "data": decrypted
+                            }
+                        except EncryptionError:
+                            continue
+        except aiohttp.ClientResponseError as e:
+            raise NetworkError(f"HTTP {e.status} error on SSE stream")
+        except aiohttp.ClientError as e:
+            raise NetworkError(f"Client error on SSE stream: {e}")
+        finally:
+            await sse_session.close()
 
 
     async def send_session_message(self, session_id: str, data: Dict[str, Any]) -> bool:

@@ -20,6 +20,14 @@
 </p>
 
 ---
+### 2026.06.09 / Not-Production Ready (Network in Testing)
+**Changes:**
+- use either email or cell_id to call `cell.create_secure_agent_session`.
+
+### 2026.06.08 / Not-Production Ready (Network in Testing)
+**Changes:**
+- use `cell.sync_messages` to receive messages in real time.
+
 ### 2026.06.07 / Not-Production Ready (Network in Testing)
 **Changes:**
 - encryption/decryption added to `instruct` key.

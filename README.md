@@ -23,7 +23,7 @@
 
 ### **About**
 
-Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-client communication across businesses, partners, and customers. A session connects two parties and lets the host's agent handle data exchange, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
+Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-client and agent-to-agent communication across businesses, partners, and customers. A session connects two parties to automate data exchange, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
 
 The SDK handles encryption, identity, and delivery. You write the agent logic.
 
@@ -97,9 +97,10 @@ Cells interact using five methods:
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
-| `create_secure_agent_session(instruct, email)` | Set agent instructions, create and invite to a session via email |
+| `create_secure_agent_session(instruct, email or cell_id)` | Set agent instructions, create and invite to a session via email or cell_id |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
+| `sync_messages()` | Receive messages from all sessions in real-time |
 
 
 All data is end-to-end encrypted. The network handles routing, key exchange, and delivery. You just send and receive.
@@ -145,7 +146,7 @@ async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
         session = await cell.create_secure_agent_session(
             instruct="Set specific goals, conversation context or further instructions"
-            email="your@email.com"
+            email="your@email.com"  #or cell_id="acme.com::cell"
         )
         print(session)
 
@@ -175,8 +176,21 @@ from neuronum import Cell
 
 async def main():
     async with Cell(network="testnet.neuronum.net") as cell:
-        async for tx in cell.get_session_messages("session_id"):
-            print(tx)
+        messages = await cell.get_session_messages(session_id)
+        print(messages)
+
+asyncio.run(main())
+```
+
+**Receive messages in real-time**
+```python
+import asyncio
+from neuronum import Cell
+
+async def main():
+    async with Cell(network="testnet.neuronum.net") as cell:
+        async for message in cell.sync_messages():
+            print(message["session_id"], message["sender"], message["data"])
 
 asyncio.run(main())
 ```
