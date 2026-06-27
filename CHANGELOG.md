@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.06.07 / Not-Production Ready (Network in Testing)
+**Changes:**
+- encryption/decryption added to `instruct` key.
+
 ### 2026.06.06 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `instruct` key added to `create_secure_agent_session`.

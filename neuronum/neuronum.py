@@ -385,10 +385,20 @@ class BaseClient(ABC):
     
 
     async def fetch_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch session metadata from list_sessions."""
+        """Fetch session metadata from list_sessions and decrypt instruct."""
         sessions = await self.list_sessions()
         for s in sessions:
             if s.get("session_id") == session_id:
+                encrypted_instruct = s.get("instruct")
+                if encrypted_instruct and isinstance(encrypted_instruct, dict):
+                    try:
+                        ephemeral_public_key_bytes = CryptoManager.safe_b64decode(encrypted_instruct["ephemeralPublicKey"])
+                        nonce = CryptoManager.safe_b64decode(encrypted_instruct["nonce"])
+                        ct = CryptoManager.safe_b64decode(encrypted_instruct["ciphertext"])
+                        decrypted = self._crypto.decrypt_with_ecdh_aesgcm(ephemeral_public_key_bytes, nonce, ct)
+                        s["instruct"] = decrypted.get("instruct", "")
+                    except Exception:
+                        s["instruct"] = ""
                 return s
         return None
     
@@ -432,15 +442,18 @@ class BaseClient(ABC):
 
         if not email:
             raise ValueError("You must provide an email")
-        
+
         if not instruct:
             raise ValueError("You must provide an instruct")
+
+        sender_public_key = self._crypto.load_public_key_from_pem(self._crypto.get_public_key_pem())
+        encrypted_instruct = self._crypto.encrypt_with_ecdh_aesgcm(sender_public_key, {"instruct": instruct})
 
         full_url = f"https://{self.network}/api/create_secure_agent_session"
 
         payload = {
             "cell": self.to_dict(),
-            "instruct": instruct,
+            "instruct": encrypted_instruct,
             "email": email
         }
 

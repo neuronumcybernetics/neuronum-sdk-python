@@ -183,30 +183,6 @@ asyncio.run(main())
 
 ------------------
 
-### **TX (Transmitter) Object**
-
-When you fetch data via `get_session_messages`, each payload arrives as a TX object:
-```python
-{
-    "tx_id": "bfd2a0d009c6f784ec97c41d3738a24e0e5ac8f1",
-    "time": "1772923393",
-    "sender": "acme.com::cell",
-    "data": {
-        "msg": "Hello World!",
-        "public_key": "-----BEGIN PUBLIC KEY-----\n..."
-    }
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `tx_id` | Unique payload ID generated from the encrypted data context and timestamp |
-| `time` | Unix timestamp of the transmission |
-| `sender` | The sender's Cell ID |
-| `data` | The decrypted payload, including the sender's public key |
-
-------------------
-
 ### **Neuronum MCP Server**
 ```sh
 neuronum neuronum start-mcp
