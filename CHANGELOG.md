@@ -20,11 +20,14 @@
 </p>
 
 ---
+### 2026.06.11 / Not-Production Ready (Network in Testing)
+**Changes:**
+- use `neuronum verify-cell` to start the Cell verification flow.
+
 ### 2026.06.10 / Not-Production Ready (Network in Testing)
 **Changes:**
 - Use `upload_session_file(session_id, file_path, mime_type)` to upload files to a session.
 - Use `download_session_file(session_id, file_id)` to download a file from a session.
-
 
 ### 2026.06.09 / Not-Production Ready (Network in Testing)
 **Changes:**

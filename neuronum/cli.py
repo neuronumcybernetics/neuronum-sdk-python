@@ -71,7 +71,7 @@ def derive_keys_from_mnemonic(mnemonic: str):
         click.echo(f"Error:Error generating keys from mnemonic: {e}")
         return None, None, None, None
 
-def save_credentials(host: str, operator: str, mnemonic: str, pem_public: bytes, pem_private: bytes, cell_type: str, network: str = None):
+def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: bytes, cell_type: str, network: str = None):
     """Save cell credentials to .neuronum directory with secure file permissions."""
     import os
     if network is None:
@@ -80,7 +80,7 @@ def save_credentials(host: str, operator: str, mnemonic: str, pem_public: bytes,
         NEURONUM_PATH.mkdir(parents=True, exist_ok=True)
 
         # Save environment configuration with sensitive data
-        env_content = f"HOST={host}\nOPERATOR={operator}\nMNEMONIC=\"{mnemonic}\"\nTYPE={cell_type}\nNETWORK={network}\n"
+        env_content = f"HOST={host}\nOPERATOR={operator}\nTYPE={cell_type}\nNETWORK={network}\n"
         ENV_FILE.write_text(env_content)
         os.chmod(ENV_FILE, 0o600)  # Owner read/write only
 
@@ -115,8 +115,8 @@ def load_credentials():
                     credentials[key] = value.strip().strip('"')
 
         credentials['host'] = credentials.get("HOST")
-        credentials['mnemonic'] = credentials.get("MNEMONIC")
         credentials['type'] = credentials.get("TYPE")
+        credentials['operator'] = credentials.get("OPERATOR")
         network = credentials.get("NETWORK", DEFAULT_NETWORK)
         credentials['network'] = network
         credentials['api_base_url'] = f"https://{network}/api"
@@ -249,7 +249,7 @@ def create_cell():
     host = result.get("host")
 
     # 6. Save credentials and connect
-    if save_credentials(host, business_name, mnemonic, pem_public, pem_private, "business", network):
+    if save_credentials(host, business_name, pem_public, pem_private, "business", network):
         click.echo(f"\nBusiness Cell created and connected successfully!")
         click.echo(f"Host: {host}")
         click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
@@ -273,7 +273,7 @@ def connect_cell():
     api_base_url = f"https://{network}/api"
 
     # 2. Get and Validate Mnemonic
-    mnemonic = questionary.text("Enter your 12-word BIP-39 mnemonic (space separated):").ask()
+    mnemonic = questionary.password("Enter your 12-word BIP-39 mnemonic (space separated):").ask()
 
     if not mnemonic:
         click.echo("Connection canceled.")
@@ -325,7 +325,7 @@ def connect_cell():
 
     # 5. Save Credentials
     if host and cell_type:
-        if save_credentials(host, operator, mnemonic, pem_public, pem_private, cell_type, network):
+        if save_credentials(host, operator, pem_public, pem_private, cell_type, network):
             click.echo(f"Successfully connected to Cell '{host}'.")
         # Error saving credentials already echoed in helper
     else:
@@ -339,12 +339,124 @@ def view_cell():
     credentials = load_credentials()
 
     if credentials:
-        click.echo("\n--- Neuronum Cell Status ---")
+        click.echo("\n")
         click.echo(f"Status:Connected")
-        click.echo(f"Host:   {credentials['host']}")
+        click.echo(f"Cell ID:   {credentials['host']}")
+        click.echo(f"Operator:   {credentials['operator']}")
         click.echo(f"Path:   {NEURONUM_PATH}")
-        click.echo(f"Key Type: {credentials['private_key'].curve.name} (SECP256R1)")
         click.echo("----------------------------")
+
+
+@click.command()
+def verify_cell():
+    """Verify domain ownership and submit business details in one step."""
+
+    credentials = load_credentials()
+    if not credentials:
+        return
+
+    host = credentials['host']
+    private_key = credentials['private_key']
+    api_base_url = credentials['api_base_url']
+
+    domain = host.replace("::cell", "").strip()
+
+    # --- Pre-check: fetch current DNS + legal status ---
+    def make_cell_payload():
+        ts = str(int(time.time()))
+        msg = f"host={host};timestamp={ts}"
+        sig = sign_message(private_key, msg.encode())
+        return {"host": host, "signed_message": sig, "message": msg}
+
+    click.echo("\nChecking current verification status...")
+    try:
+        dns_resp = requests.post(f"{api_base_url}/check_dns_status", json={"cell": make_cell_payload()}, timeout=10)
+        legal_resp = requests.post(f"{api_base_url}/check_legal_status", json={"cell": make_cell_payload()}, timeout=10)
+        dns_verified = dns_resp.status_code == 200 and dns_resp.json().get("status") == "True"
+        legal_verified = legal_resp.status_code == 200 and legal_resp.json().get("status") == "True"
+    except requests.exceptions.RequestException:
+        dns_verified = False
+        legal_verified = False
+
+    if dns_verified and legal_verified:
+        click.echo(f"Cell {host} ({credentials['operator']}) is already fully verified (DNS + Legal Entity).")
+        return
+
+    if dns_verified:
+        click.echo("DNS: verified")
+    else:
+        click.echo("DNS: not verified")
+
+    if legal_verified:
+        click.echo("Legal: verified")
+    else:
+        click.echo("Legal: pending")
+
+    # --- Step 1: Generate challenge and show DNS record ---
+    challenge_value = base64.urlsafe_b64encode(
+        hashlib.sha256(f"{host}{int(time.time())}".encode()).digest()
+    ).decode().rstrip("=")
+
+    click.echo(f"\nStep 1 — Add DNS TXT Record")
+    click.echo(f"\n  Name:   _neuronum.{domain}")
+    click.echo(f"  Type:   TXT")
+    click.echo(f"  Value:  {challenge_value}")
+    dns_confirmed = questionary.confirm("\nHave you added the DNS record?").ask()
+    if not dns_confirmed:
+        click.echo("Canceled.")
+        return
+
+    # --- Step 2: Collect business details ---
+    click.echo(f"\nStep 2 — Business Details")
+
+    business_address = questionary.text(f"Business address for {credentials['operator']}:").ask()
+    if not business_address:
+        click.echo("Canceled.")
+        return
+
+    registration_country = questionary.text("Registration country (e.g. DE, US):").ask()
+    if not registration_country:
+        click.echo("Canceled.")
+        return
+
+    tax_number = questionary.text("Tax / VAT number (leave blank if none):").ask()
+    tax_number = tax_number.strip() if tax_number else "no_tax"
+
+    # --- Step 3: Sign and submit everything in one call ---
+    timestamp = str(int(time.time()))
+    message = f"host={host};timestamp={timestamp}"
+    signature_b64 = sign_message(private_key, message.encode())
+    if not signature_b64:
+        return
+
+    click.echo("\nSubmitting verification...")
+    try:
+        response = requests.post(
+            f"{api_base_url}/verify_cell",
+            json={
+                "host": host,
+                "signed_message": signature_b64,
+                "message": message,
+                "challenge_value": challenge_value,
+                "domain": domain,
+                "business_address": business_address,
+                "registartion_country": registration_country,
+                "tax_number": tax_number,
+            },
+            timeout=15
+        )
+        response.raise_for_status()
+        result = response.json()
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error: {e}")
+        return
+
+    if str(result.get("success", "")).lower() == "true":
+        click.echo(f"\nCell verified successfully for {domain}.")
+        click.echo("You will be notified once the review is complete.")
+    else:
+        click.echo(f"\nVerification failed.")
+        click.echo(f"Server response: {result.get('detail') or result}")
 
 
 @click.command()
@@ -447,6 +559,7 @@ def disconnect_cell():
     except Exception as e:
         click.echo(f"Error:Error during local file cleanup: {e}")
 
+
 @click.command()
 @click.option("--network", default="neuronum.net", show_default=True, help="Neuronum network to connect to.")
 def start_mcp(network):
@@ -462,6 +575,7 @@ def start_mcp(network):
 cli.add_command(create_cell)
 cli.add_command(connect_cell)
 cli.add_command(view_cell)
+cli.add_command(verify_cell)
 cli.add_command(delete_cell)
 cli.add_command(disconnect_cell)
 cli.add_command(start_mcp)

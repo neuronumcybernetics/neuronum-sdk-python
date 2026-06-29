@@ -77,6 +77,11 @@ neuronum connect-cell
 neuronum view-cell
 ```
 
+**Verify** the connected Cell ID:
+```sh
+neuronum verify-cell
+```
+
 **Disconnect** Cell credentials from this device:
 ```sh
 neuronum disconnect-cell
@@ -91,7 +96,7 @@ neuronum delete-cell
 
 ### **Methods**
 
-Cells interact using five methods:
+Cells interact on Neuronum using the following methods:
 
 | Method | Description |
 |--------|-------------|
