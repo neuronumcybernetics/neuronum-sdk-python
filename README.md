@@ -100,6 +100,8 @@ Cells interact using five methods:
 | `create_secure_agent_session(instruct, email or cell_id)` | Set agent instructions, create and invite to a session via email or cell_id |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
+| `upload_session_file(session_id, file_path, mime_type)` | Upload a file to a session and send a file metadata message |
+| `download_session_file(session_id, file_id)` | Download a file from a session by file ID. Returns raw bytes |
 | `sync_messages()` | Receive messages from all sessions in real-time |
 
 
@@ -182,6 +184,40 @@ async def main():
 asyncio.run(main())
 ```
 
+**Upload a file to a session**
+```python
+import asyncio
+from neuronum import Cell
+
+async def main():
+    async with Cell(network="testnet.neuronum.net", host="your-host") as cell:
+        success = await cell.upload_session_file(
+            "session_id",
+            "/path/to/file.pdf",
+            mime_type="application/pdf"
+        )
+        print(success)
+
+asyncio.run(main())
+```
+
+**Download a file from a session**
+
+The `file_id` is available in the file metadata message sent automatically after a successful upload. Retrieve it via `get_session_messages` from the `file_id` field.
+
+```python
+import asyncio
+from neuronum import Cell
+
+async def main():
+    async with Cell(network="testnet.neuronum.net", host="your-host") as cell:
+        file_bytes = await cell.download_session_file("session_id", "file_id")
+        with open("output.pdf", "wb") as f:
+            f.write(file_bytes)
+
+asyncio.run(main())
+```
+
 **Receive messages in real-time**
 ```python
 import asyncio
@@ -193,6 +229,103 @@ async def main():
             print(message["session_id"], message["sender"], message["data"])
 
 asyncio.run(main())
+```
+
+------------------
+
+### **Elements**
+
+Elements are UI components rendered on the client's frontend. Pass an `element` key in any `send_session_message` call to trigger them.
+
+| Element | Description |
+|---------|-------------|
+| `confirm` | Renders Accept / Decline buttons |
+| `choice` | Renders a set of option buttons |
+| `input` | Renders a single text input field |
+| `form` | Renders a multi-field form |
+| `table` | Renders a data table |
+| `card` | Renders a composite card combining multiple elements |
+| `file` | Renders a file upload prompt |
+
+**Confirm**
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Do you accept the session terms?",
+    "element": "confirm"
+})
+```
+
+**Choice**
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Which report format do you prefer?",
+    "element": "choice",
+    "choices": ["PDF", "CSV", "JSON"]
+})
+```
+
+**Input**
+```python
+await cell.send_session_message(session_id, {
+    "msg": "What is your company name?",
+    "element": "input",
+    "placeholder": "e.g. Acme Corp"
+})
+```
+
+**Form**
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Tell us about yourself:",
+    "element": "form",
+    "fields": [
+        {"name": "company",  "label": "Company",  "placeholder": "Acme Corp"},
+        {"name": "role",     "label": "Role",      "placeholder": "CEO"},
+        {"name": "teamsize", "label": "Team size", "placeholder": "50"}
+    ]
+})
+```
+
+**Table**
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Here are the results:",
+    "element": "table",
+    "columns": ["Name", "Status", "Score"],
+    "rows": [
+        ["Alice", "Active", 92],
+        ["Bob", "Inactive", 74],
+        ["Carol", "Active", 88]
+    ]
+})
+```
+
+**Card**
+
+A card combines multiple elements into a single message.
+
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Review this proposal:",
+    "element": "card",
+    "components": [
+        {"type": "table", "columns": ["Item", "Cost"], "rows": [["Dev", "$5k"], ["Design", "$2k"]]},
+        {"type": "input", "name": "budget", "label": "Your budget", "placeholder": "$10,000"},
+        {"type": "choice", "name": "timeline", "label": "Timeline", "choices": ["1 month", "3 months", "6 months"]},
+        {"type": "confirm", "name": "approved", "label": "Do you approve?"}
+    ]
+})
+```
+
+**File**
+
+Renders a file upload prompt on the client.
+
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Please upload your contract:",
+    "element": "file"
+})
 ```
 
 ------------------

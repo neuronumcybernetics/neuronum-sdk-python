@@ -522,6 +522,74 @@ class BaseClient(ABC):
         return result
 
 
+    async def upload_session_file(self, session_id: str, file_path: str, mime_type: str = "application/octet-stream") -> bool:
+        """Upload a file to a session and send a file metadata message."""
+
+        if not getattr(self, 'host', None):
+            raise ValueError("host is required for upload_session_file")
+
+        if not self._network_client._session:
+            self._network_client._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=None)
+            )
+
+        import os
+        filename = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+
+        full_url = f"https://{self.network}/api/upload_session_file/{session_id}?host={self.host}"
+
+        try:
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
+
+            form = aiohttp.FormData()
+            form.add_field("file", file_bytes, filename=filename, content_type=mime_type)
+
+            async with self._network_client._session.post(full_url, data=form) as response:
+                if response.status == 403:
+                    raise NetworkError("Not authorized for this session")
+                response.raise_for_status()
+                result = await response.json()
+
+            file_id = result["file_id"]
+            return await self.send_session_message(session_id, {
+                "action": "file",
+                "file_id": file_id,
+                "filename": filename,
+                "size": file_size,
+                "mime_type": mime_type,
+            })
+
+        except aiohttp.ClientError as e:
+            raise NetworkError(f"Failed to upload file: {e}")
+
+
+    async def download_session_file(self, session_id: str, file_id: str) -> bytes:
+        """Download an encrypted file from a session by file_id. Returns raw bytes."""
+
+        if not getattr(self, 'host', None):
+            raise ValueError("host is required for download_session_file")
+
+        full_url = f"https://{self.network}/api/get_session_file/{session_id}/{file_id}?host={self.host}"
+
+        if not self._network_client._session:
+            self._network_client._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.config.timeout)
+            )
+
+        try:
+            async with self._network_client._session.get(full_url) as response:
+                if response.status == 403:
+                    raise NetworkError("Not authorized for this session file")
+                if response.status == 404:
+                    raise NetworkError(f"File not found: {file_id}")
+                response.raise_for_status()
+                return await response.read()
+        except aiohttp.ClientError as e:
+            raise NetworkError(f"Failed to download file: {e}")
+
+
     async def sync_messages(self) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream and decrypt real-time messages from all sessions via SSE."""
 
@@ -583,6 +651,10 @@ class BaseClient(ABC):
                             continue
         except aiohttp.ClientResponseError as e:
             raise NetworkError(f"HTTP {e.status} error on SSE stream")
+        except aiohttp.ClientPayloadError:
+            # nginx closed the chunked stream without a proper terminator — treat as clean end
+            logger.info("SSE stream closed by server")
+            return
         except aiohttp.ClientError as e:
             raise NetworkError(f"Client error on SSE stream: {e}")
         finally:
