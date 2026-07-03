@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.01 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  send elements using the mcp tool `send_session_message`
+
 ### 2026.06.11 / Not-Production Ready (Network in Testing)
 **Changes:**
 - use `neuronum verify-cell` to start the Cell verification flow.

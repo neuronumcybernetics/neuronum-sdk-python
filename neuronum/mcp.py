@@ -17,6 +17,7 @@ Run with:
   NEURONUM_NETWORK=testnet.neuronum.net neuronum-mcp
 """
 
+import json
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -144,20 +145,94 @@ async def create_secure_agent_session(
 async def send_session_message(
     ctx: Context,
     session_id: str,
-    data: dict[str, Any],
+    msg: str,
+    element: str | None = None,
+    # confirm — no extra fields needed
+    # choice
+    choices: Any = None,
+    # input
+    placeholder: str | None = None,
+    # form
+    fields: Any = None,
+    # table
+    columns: Any = None,
+    rows: Any = None,
+    # card
+    components: Any = None,
 ) -> dict[str, Any]:
     """Send an encrypted message to a secure agent session.
 
-    The payload is end-to-end encrypted (ECDH + AES-GCM) for both the
-    sender and the receiver before it leaves this machine.
+    The payload is end-to-end encrypted (ECDH + AES-GCM) for both sender
+    and receiver. Pass `element` to render interactive UI components on the
+    client frontend.
 
     Args:
-        session_id: The ID of the session to send the message to.
-        data:       The JSON-serializable payload to send.
+        session_id:  The ID of the session to send the message to.
+        msg:         The text content of the message.
+        element:     Optional UI element type. One of:
+                       "confirm" — Accept / Decline buttons.
+                       "choice"  — Option buttons; also pass `choices`.
+                       "input"   — Single text input; optionally pass `placeholder`.
+                       "form"    — Multi-field form; also pass `fields`.
+                       "table"   — Data table; also pass `columns` and `rows`.
+                       "card"    — Composite element; also pass `components`.
+                       "file"    — File upload prompt.
+        choices:     (choice) List of option labels, e.g. ["PDF", "CSV"].
+        placeholder: (input) Placeholder text for the input field.
+        fields:      (form) List of field dicts with keys: name, label, placeholder.
+                     Example: [{"name": "company", "label": "Company", "placeholder": "Acme"}]
+        columns:     (table) Column header labels, e.g. ["Name", "Status", "Score"].
+        rows:        (table) List of rows, each a list of cell values.
+                     Example: [["Alice", "Active", 92], ["Bob", "Inactive", 74]]
+        components:  (card) List of component dicts. Each dict needs a "type" key
+                     matching an element name plus its relevant fields.
+                     Example: [{"type": "confirm", "label": "Approve?"},
+                               {"type": "input", "name": "budget", "placeholder": "$10k"}]
 
     Returns:
         {"success": bool, "session_id": str}
     """
+    if isinstance(choices, str):
+        choices = json.loads(choices)
+    if isinstance(fields, str):
+        fields = json.loads(fields)
+    if isinstance(columns, str):
+        columns = json.loads(columns)
+    if isinstance(rows, str):
+        rows = json.loads(rows)
+    if isinstance(components, str):
+        components = json.loads(components)
+
+    data: dict[str, Any] = {"msg": msg}
+
+    if element:
+        data["element"] = element
+
+        if element == "choice":
+            if not choices:
+                raise ValueError("'choices' is required for element='choice'")
+            data["choices"] = choices
+
+        elif element == "input":
+            if placeholder:
+                data["placeholder"] = placeholder
+
+        elif element == "form":
+            if not fields:
+                raise ValueError("'fields' is required for element='form'")
+            data["fields"] = fields
+
+        elif element == "table":
+            if not columns or rows is None:
+                raise ValueError("'columns' and 'rows' are required for element='table'")
+            data["columns"] = columns
+            data["rows"] = rows
+
+        elif element == "card":
+            if not components:
+                raise ValueError("'components' is required for element='card'")
+            data["components"] = components
+
     cell: Cell = ctx.lifespan_context.cell
     success = await cell.send_session_message(session_id=session_id, data=data)
     return {"success": success, "session_id": session_id}
