@@ -4,17 +4,18 @@ from llama_cpp import Llama
 # --- Local GGUF model (default) ----------------------------------------------
 
 llm = Llama.from_pretrained(
-    repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
-    filename="qwen2.5-3b-instruct-q4_k_m.gguf",
-    n_ctx=2048,
+    repo_id="Qwen/Qwen2.5-7B-Instruct-GGUF",
+    filename="qwen2.5-7b-instruct-q3_k_m.gguf",
+    n_ctx=4096,
     verbose=False,
+    #n_gpu_layers=-1,  # Uncomment to use GPU acceleration
 )
 
 def call_model(system: str, history: list[dict]) -> dict:
     response = llm.create_chat_completion(
         messages=[{"role": "system", "content": system}] + history,
         max_tokens=512,
-        temperature=0.7,
+        temperature=0.3,
     )
     raw = response["choices"][0]["message"]["content"].strip()
     return _parse_response(raw)
