@@ -162,12 +162,12 @@ def create_cell():
     api_base_url = f"https://{network}/api"
 
     # 2. Collect business info
-    business_name = questionary.text("Company / business name:").ask()
+    business_name = questionary.text("Company Name:").ask()
     if not business_name:
         click.echo("Canceled.")
         return
 
-    business_email = questionary.text("Business email:").ask()
+    business_email = questionary.text("Business Email:").ask()
     if not business_email:
         click.echo("Canceled.")
         return
