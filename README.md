@@ -112,7 +112,7 @@ Cells interact on Neuronum using the following methods:
 
 All data is end-to-end encrypted. The network handles routing, key exchange, and delivery. You just send and receive.
 
-**Connecting to the network:** Use `async with Cell(network="testnet.neuronum.net") as cell` to connect. This reads your Cell credentials from `~/.neuronum/.env` and establishes a connection to the specified Neuronum network. Omitting the `network` parameter defaults to `testnet.neuronum.net`.
+**Connecting to the network:** Use `async with Cell() as cell` to connect. This reads your Cell credentials from `~/.neuronum/.env` and establishes a connection to the Neuronum network at `neuronum.net`. Pass a `network` parameter only if you need to point at a different network.
 
 ------------------
 
@@ -124,7 +124,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         cells = await cell.list_cells()
         print(cells)
 
@@ -137,7 +137,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         sessions = await cell.list_sessions()
         print(sessions)
 
@@ -150,7 +150,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         session = await cell.create_secure_agent_session(
             instruct="Set specific goals, conversation context or further instructions"
             email="your@email.com"  #or cell_id="acme.com::cell"
@@ -166,7 +166,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         success = await cell.send_session_message(
             "session_id",
             {"msg": "Hello"}
@@ -182,7 +182,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         messages = await cell.get_session_messages(session_id)
         print(messages)
 
@@ -195,7 +195,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net", host="your-host") as cell:
+    async with Cell(host="your-host") as cell:
         success = await cell.upload_session_file(
             "session_id",
             "/path/to/file.pdf",
@@ -215,7 +215,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net", host="your-host") as cell:
+    async with Cell(host="your-host") as cell:
         file_bytes = await cell.download_session_file("session_id", "file_id")
         with open("output.pdf", "wb") as f:
             f.write(file_bytes)
@@ -229,7 +229,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         async for message in cell.sync_messages():
             print(message["session_id"], message["sender"], message["data"])
 

@@ -22,7 +22,7 @@ NEURONUM_PATH = Path.home() / ".neuronum"
 ENV_FILE = NEURONUM_PATH / ".env"
 PUBLIC_KEY_FILE = NEURONUM_PATH / "public_key.pem"
 PRIVATE_KEY_FILE = NEURONUM_PATH / "private_key.pem"
-DEFAULT_NETWORK = "testnet.neuronum.net"
+DEFAULT_NETWORK = "neuronum.net"
 API_BASE_URL = f"https://{DEFAULT_NETWORK}/api"
 
 # Utility Functions

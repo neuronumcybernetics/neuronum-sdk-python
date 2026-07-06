@@ -730,7 +730,7 @@ class BaseClient(ABC):
 class Cell(BaseClient):
     """Cell client implementation"""
 
-    def __init__(self, config: Optional[ClientConfig] = None, network: str = "testnet.neuronum.net"):
+    def __init__(self, config: Optional[ClientConfig] = None, network: str = "neuronum.net"):
         if config is None:
             config = ClientConfig(network=network)
         super().__init__(config)

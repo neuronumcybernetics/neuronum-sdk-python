@@ -14,7 +14,7 @@ Install the optional MCP extra to use this:
 
 Run with:
   neuronum-mcp                         (stdio transport, default network)
-  NEURONUM_NETWORK=testnet.neuronum.net neuronum-mcp
+  NEURONUM_NETWORK=your-network.neuronum.net neuronum-mcp
 """
 
 import json

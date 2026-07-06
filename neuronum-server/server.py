@@ -171,7 +171,7 @@ async def listen(cell: Cell):
 async def main():
     retry_delay = 2
 
-    async with Cell(network="testnet.neuronum.net") as cell:
+    async with Cell() as cell:
         while True:
             try:
                 await listen(cell)

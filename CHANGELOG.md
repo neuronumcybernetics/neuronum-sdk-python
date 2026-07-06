@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.02 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  `async with Cell() as cell:` now defaults to network="neuronum.net"
+
 ### 2026.07.01 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  send elements using the mcp tool `send_session_message`
