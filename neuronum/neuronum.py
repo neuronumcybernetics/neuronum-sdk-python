@@ -437,7 +437,7 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch sessions: {e}")
             return []
 
-    async def create_secure_agent_session(self, instruct: str, email: str | None = None, cell_id: str | None = None) -> Optional[Dict[str, Any]]:
+    async def create_secure_agent_session(self, instruct: str | None = None, email: str | None = None, cell_id: str | None = None) -> Optional[Dict[str, Any]]:
         """Create a secure B2B session using either a cell_id or an email."""
 
         if not email and not cell_id:
@@ -445,11 +445,10 @@ class BaseClient(ABC):
         if email and cell_id:
             raise ValueError("Only one of email or cell_id may be provided, not both.")
 
-        if not instruct:
-            raise ValueError("You must provide an instruct")
-
-        sender_public_key = self._crypto.load_public_key_from_pem(self._crypto.get_public_key_pem())
-        encrypted_instruct = self._crypto.encrypt_with_ecdh_aesgcm(sender_public_key, {"instruct": instruct})
+        encrypted_instruct = None
+        if instruct:
+            sender_public_key = self._crypto.load_public_key_from_pem(self._crypto.get_public_key_pem())
+            encrypted_instruct = self._crypto.encrypt_with_ecdh_aesgcm(sender_public_key, {"instruct": instruct})
 
         full_url = f"https://{self.network}/api/create_secure_agent_session"
 

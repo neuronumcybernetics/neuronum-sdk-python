@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.03 / Not-Production Ready (Network in Testing)
+**Changes:**
+- `instruct` is now optional in `create_secure_agent_session`.
+
 ### 2026.07.02 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  `async with Cell() as cell:` now defaults to network="neuronum.net"

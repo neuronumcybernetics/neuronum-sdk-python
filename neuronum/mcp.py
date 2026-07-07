@@ -108,17 +108,17 @@ async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, 
 @mcp.tool
 async def create_secure_agent_session(
     ctx: Context,
-    instruct: str,
     email: str | None = None,
     cell_id: str | None = None,
+    instruct: str | None = None,
 ) -> dict[str, Any]:
     """
-    Instruct your agent, create a secure agent session and send an invitation.
+    Create a secure agent session and send an invitation, optionally instructing the agent.
 
     Args:
         email: Optional email address of the receiver.
         cell_id: Optional cell_id of the receiver.
-        instruct: Instructions or goals for the agent.
+        instruct: Optional instructions or goals for the agent.
 
     Returns:
         Session metadata returned by the server.
