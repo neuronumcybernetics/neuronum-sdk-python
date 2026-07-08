@@ -533,10 +533,12 @@ class BaseClient(ABC):
             )
 
         import os
+        from urllib.parse import urlencode
         filename = os.path.basename(file_path)
         file_size = os.path.getsize(file_path)
 
-        full_url = f"https://{self.network}/api/upload_session_file/{session_id}?host={self.host}"
+        query = urlencode(self.to_dict())
+        full_url = f"https://{self.network}/api/upload_session_file/{session_id}?{query}"
 
         try:
             with open(file_path, "rb") as f:
@@ -570,7 +572,9 @@ class BaseClient(ABC):
         if not getattr(self, 'host', None):
             raise ValueError("host is required for download_session_file")
 
-        full_url = f"https://{self.network}/api/get_session_file/{session_id}/{file_id}?host={self.host}"
+        from urllib.parse import urlencode
+        query = urlencode(self.to_dict())
+        full_url = f"https://{self.network}/api/download_session_file/{session_id}/{file_id}?{query}"
 
         if not self._network_client._session:
             self._network_client._session = aiohttp.ClientSession(

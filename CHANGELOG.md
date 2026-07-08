@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.04 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  `upload_session_file` and `download_session_file` now sign requests with `self.to_dict()` 
+
 ### 2026.07.03 / Not-Production Ready (Network in Testing)
 **Changes:**
 - `instruct` is now optional in `create_secure_agent_session`.
