@@ -11,7 +11,11 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
+import os
+import re
 import time
 import hashlib
 from bip_utils import Bip39MnemonicGenerator, Bip39SeedGenerator
@@ -70,6 +74,45 @@ def derive_keys_from_mnemonic(mnemonic: str):
     except Exception as e:
         click.echo(f"Error:Error generating keys from mnemonic: {e}")
         return None, None, None, None
+
+def validate_business_password(password: str) -> str | None:
+    """Returns an error message, or None if the password is valid."""
+    if not password:
+        return "Please enter a password."
+    if len(password) < 10:
+        return "Password must be at least 10 characters."
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter."
+    if not re.search(r"[0-9]", password):
+        return "Password must contain at least one number."
+    if not re.search(r"[^a-zA-Z0-9]", password):
+        return "Password must contain at least one special character."
+    return None
+
+def encrypt_mnemonic(mnemonic: str, password: str) -> dict:
+    """Encrypts the mnemonic with PBKDF2-SHA256 (600k iterations, 16-byte random salt)
+    -> AES-256-GCM (12-byte random IV). Returns base64-encoded salt/iv/ciphertext."""
+    salt = os.urandom(16)
+    iv = os.urandom(12)
+
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=600_000,
+    )
+    key = kdf.derive(password.encode("utf-8"))
+
+    aesgcm = AESGCM(key)
+    ciphertext = aesgcm.encrypt(iv, mnemonic.encode("utf-8"), None)
+
+    return {
+        "salt": base64.b64encode(salt).decode(),
+        "iv": base64.b64encode(iv).decode(),
+        "ciphertext": base64.b64encode(ciphertext).decode(),
+    }
 
 def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: bytes, cell_type: str, network: str = None):
     """Save cell credentials to .neuronum directory with secure file permissions."""
@@ -213,7 +256,25 @@ def create_cell():
         click.echo("Canceled.")
         return
 
-    # 5. Generate mnemonic + keys, then verify email
+    # 5. Set a password — used to encrypt the mnemonic before it is ever sent to the
+    # server. The server only ever receives the ciphertext; it cannot decrypt it and
+    # never sees the password or mnemonic.
+    while True:
+        password = questionary.password("Set a password (to encrypt your recovery phrase):").ask()
+        if not password:
+            click.echo("Canceled.")
+            return
+        pw_error = validate_business_password(password)
+        if pw_error:
+            click.echo(f"Error:{pw_error}")
+            continue
+        password_confirm = questionary.password("Confirm password:").ask()
+        if password != password_confirm:
+            click.echo("Error:Passwords do not match.")
+            continue
+        break
+
+    # 6. Generate mnemonic + keys, encrypt the mnemonic, then verify email
     click.echo("Verifying...")
     mnemonic_obj = Bip39MnemonicGenerator().FromWordsNumber(12)
     mnemonic = str(mnemonic_obj)
@@ -223,16 +284,18 @@ def create_cell():
         return
 
     business_domain = business_email.split('@')[1]
+    encrypted_mnemonic = encrypt_mnemonic(mnemonic, password)
 
     try:
         response = requests.post(
-            f"{api_base_url}/verify_email",
+            f"{api_base_url}/create_cell",
             json={
                 "public_key": pem_public.decode("utf-8"),
                 "business_email": business_email,
                 "business_domain": business_domain,
                 "verification_code": verification_code,
-                "company_name": business_name
+                "company_name": business_name,
+                "encrypted_mnemonic": encrypted_mnemonic,
             },
             timeout=10
         )
@@ -248,7 +311,7 @@ def create_cell():
 
     host = result.get("host")
 
-    # 6. Save credentials and connect
+    # 7. Save credentials and connect
     if save_credentials(host, business_name, pem_public, pem_private, "business", network):
         click.echo(f"\nBusiness Cell created and connected successfully!")
         click.echo(f"Host: {host}")

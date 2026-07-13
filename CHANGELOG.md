@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.05 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  `create_cell` now encrypts the mnemonic via password and sends it to the network
+
 ### 2026.07.04 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  `upload_session_file` and `download_session_file` now sign requests with `self.to_dict()` 
