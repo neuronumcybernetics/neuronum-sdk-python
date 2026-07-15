@@ -1,2 +1,0 @@
-neuronum
-llama-cpp-python
