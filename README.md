@@ -27,8 +27,6 @@ Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted
 
 The SDK handles encryption, identity, and delivery. You write the agent logic.
 
-> ⚠️ **Development Status:** The Neuronum SDK is currently in beta and is **not production-ready**. It is intended for development, testing, and experimental purposes only. Do not use in production environments or for critical applications.
-
 ------------------
 
 ### **Requirements**
@@ -59,7 +57,6 @@ A Cell is your address used to send and receive data on the Neuronum network. Yo
 
 Example IDs: 
 acme.com::cell 
-johndoe@acme.com::cell 
 
 **Create a Cell:**
 ```sh
@@ -342,4 +339,5 @@ neuronum neuronum start-mcp
 ------------------
 
 ### **Full Documentation**
-For the complete SDK reference including the E2EE protocol, visit the [Neuronum Docs](https://neuronum.net/docs).
+Visit the [Neuronum Docs](https://neuronum.net/docs) for the complete SDK reference.
+# neuronum-server

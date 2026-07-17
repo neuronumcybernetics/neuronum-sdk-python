@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.06 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  `verify_cell` now asks for an optional Commercial Register Number
+
 ### 2026.07.05 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  `create_cell` now encrypts the mnemonic via password and sends it to the network

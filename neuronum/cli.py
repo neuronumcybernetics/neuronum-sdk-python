@@ -481,9 +481,12 @@ def verify_cell():
     if not registration_country:
         click.echo("Canceled.")
         return
+    
+    commercial_register_number = questionary.text("Commercial register number (leave blank if none):").ask()
+    commercial_register_number = commercial_register_number.strip() if commercial_register_number else "no_commercial_register_number"
 
-    tax_number = questionary.text("Tax / VAT number (leave blank if none):").ask()
-    tax_number = tax_number.strip() if tax_number else "no_tax"
+    vat_number = questionary.text("VAT number (leave blank if none):").ask()
+    vat_number = vat_number.strip() if vat_number else "no_vat_number"
 
     # --- Step 3: Sign and submit everything in one call ---
     timestamp = str(int(time.time()))
@@ -503,8 +506,9 @@ def verify_cell():
                 "challenge_value": challenge_value,
                 "domain": domain,
                 "business_address": business_address,
-                "registartion_country": registration_country,
-                "tax_number": tax_number,
+                "registration_country": registration_country,
+                "commercial_register_number": commercial_register_number,
+                "vat_number": vat_number,
             },
             timeout=15
         )
@@ -515,8 +519,8 @@ def verify_cell():
         return
 
     if str(result.get("success", "")).lower() == "true":
-        click.echo(f"\nCell verified successfully for {domain}.")
-        click.echo("You will be notified once the review is complete.")
+        click.echo(f"\nCell verification successfully submitted.")
+        click.echo("use `verify-cell` to check the verification status.")
     else:
         click.echo(f"\nVerification failed.")
         click.echo(f"Server response: {result.get('detail') or result}")
