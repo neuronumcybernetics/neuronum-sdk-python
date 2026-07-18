@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='neuronum',
-    version = '2026.07.06',
+    version = '2026.07.07',
     author='Neuronum Cybernetics',
     author_email='welcome@neuronum.net',
     description='Neuronum SDK',
@@ -20,7 +20,6 @@ setup(
     ],
     install_requires=[
         'aiohttp',
-        'aiofiles',
         'click',
         'questionary',
         'requests',

@@ -23,7 +23,7 @@
 
 ### **About**
 
-Neuronum is built around the Secure Agent Session (SAS). An end-to-end encrypted channel designed for agent-to-client and agent-to-agent communication across businesses, partners, and customers. A session connects two parties to automate data exchange, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
+Neuronum is built around the [Secure Agent Session (SAS)](https://neuronum.net/secure-agent-session), an end-to-end encrypted channel designed for stateful agent-to-client and agent-to-agent communication across businesses, partners, and customers. A session connects two parties to automate data exchange, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
 
 The SDK handles encryption, identity, and delivery. You write the agent logic.
 
@@ -100,10 +100,11 @@ Cells interact on Neuronum using the following methods:
 | `list_cells()` | List all Neuronum Cells |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
 | `create_secure_agent_session(email or cell_id, instruct=None)` | Create and invite to a session via email or cell_id, optionally setting agent instructions |
+| `fetch_session_metadata(session_id)` | Fetch session metadata |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
-| `upload_session_file(session_id, file_path, mime_type)` | Upload a file to a session and send a file metadata message |
-| `download_session_file(session_id, file_id)` | Download a file from a session by file ID. Returns raw bytes |
+| `upload_session_file(session_id, file_path, mime_type)` | Upload an encrypted file to a session |
+| `download_session_file(session_id, file_id)` | Download a file from a session by file ID |
 | `sync_messages()` | Receive messages from all sessions in real-time |
 
 
@@ -157,6 +158,19 @@ async def main():
 asyncio.run(main())
 ```
 
+**Fetch Session Metadata**
+```python
+import asyncio
+from neuronum import Cell
+
+async def main():
+    async with Cell() as cell:
+        metadata = await cell.fetch_session_metadata("session_id")
+        print(metadata)
+
+asyncio.run(main())
+```
+
 **Send a message to a session**
 ```python
 import asyncio
@@ -192,7 +206,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(host="your-host") as cell:
+    async with Cell() as cell:
         success = await cell.upload_session_file(
             "session_id",
             "/path/to/file.pdf",
@@ -212,7 +226,7 @@ import asyncio
 from neuronum import Cell
 
 async def main():
-    async with Cell(host="your-host") as cell:
+    async with Cell() as cell:
         file_bytes = await cell.download_session_file("session_id", "file_id")
         with open("output.pdf", "wb") as f:
             f.write(file_bytes)
@@ -248,6 +262,7 @@ Elements are UI components rendered on the client's frontend. Pass an `element` 
 | `table` | Renders a data table |
 | `card` | Renders a composite card combining multiple elements |
 | `file` | Renders a file upload prompt |
+| `link` | Renders a clickable button that opens a URL in a new browser tab |
 
 **Confirm**
 ```python
@@ -327,6 +342,18 @@ Renders a file upload prompt on the client.
 await cell.send_session_message(session_id, {
     "msg": "Please upload your contract:",
     "element": "file"
+})
+```
+
+**Link**
+
+Renders a clickable button that opens a URL in a new browser tab.
+
+```python
+await cell.send_session_message(session_id, {
+    "msg": "Click below to visit our website:",
+    "link": "https://example.com",
+    "element": "link"
 })
 ```
 

@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.07 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  `upload_session_file` now uploads files encrypted
+
 ### 2026.07.06 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  `verify_cell` now asks for an optional Commercial Register Number

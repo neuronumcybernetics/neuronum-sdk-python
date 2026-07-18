@@ -1,5 +1,4 @@
 import aiohttp
-import aiofiles
 from typing import AsyncGenerator, Optional, Dict, Any, List
 import json
 import asyncio
@@ -55,7 +54,6 @@ class NetworkError(NeuronumError):
 class ClientConfig:
     """Client configuration settings"""
     network: str = "neuronum.net"
-    cache_expiry: int = 3600
     credentials_path: Path = Path.home() / ".neuronum"
     timeout: int = 30
     max_retries: int = 3
@@ -107,19 +105,50 @@ class CryptoManager:
             raise EncryptionError(f"Failed to load public key: {e}")
     
     @staticmethod
-    def safe_b64decode(data: str) -> bytes:
-        """Safely decode base64 with proper padding"""
-        padding = 4 - (len(data) % 4)
+    def safe_b64decode(data: Any) -> bytes:
+        """Safely decode base64 with proper padding from either text or bytes."""
+        if isinstance(data, str):
+            normalized = data.encode('ascii')
+        elif isinstance(data, bytes):
+            normalized = data
+        else:
+            normalized = str(data).encode('ascii')
+
+        if isinstance(normalized, bytes) and len(normalized) > 0:
+            first_byte = normalized[0]
+            if first_byte in (0x04, 0x03, 0x02):
+                return normalized
+
+        padding = 4 - (len(normalized) % 4)
         if padding != 4:
-            data += '=' * padding
-        return base64.urlsafe_b64decode(data)
+            normalized += b'=' * padding
+        return base64.urlsafe_b64decode(normalized)
     
     def encrypt_with_ecdh_aesgcm(
         self, 
         public_key: ec.EllipticCurvePublicKey, 
         plaintext_dict: Dict[str, Any]
     ) -> Dict[str, str]:
-        """Encrypt data using ECDH + AES-GCM"""
+        """Encrypt dictionary data using ECDH + AES-GCM"""
+        return self._encrypt_bytes_with_ecdh_aesgcm(
+            public_key,
+            json.dumps(plaintext_dict).encode()
+        )
+
+    def encrypt_bytes_with_ecdh_aesgcm(
+        self,
+        public_key: ec.EllipticCurvePublicKey,
+        plaintext_bytes: bytes
+    ) -> Dict[str, str]:
+        """Encrypt raw bytes using ECDH + AES-GCM"""
+        return self._encrypt_bytes_with_ecdh_aesgcm(public_key, plaintext_bytes)
+
+    def _encrypt_bytes_with_ecdh_aesgcm(
+        self,
+        public_key: ec.EllipticCurvePublicKey,
+        plaintext_bytes: bytes
+    ) -> Dict[str, str]:
+        """Encrypt bytes using ECDH + AES-GCM and return base64-encoded fields."""
         try:
             ephemeral_private = ec.generate_private_key(ec.SECP256R1())
             shared_secret = ephemeral_private.exchange(ec.ECDH(), public_key)
@@ -132,7 +161,6 @@ class CryptoManager:
             
             aesgcm = AESGCM(derived_key)
             nonce = os.urandom(12)
-            plaintext_bytes = json.dumps(plaintext_dict).encode()
             ciphertext = aesgcm.encrypt(nonce, plaintext_bytes, None)
             
             ephemeral_public_bytes = ephemeral_private.public_key().public_bytes(
@@ -151,15 +179,49 @@ class CryptoManager:
     
     def decrypt_with_ecdh_aesgcm(
         self, 
-        ephemeral_public_key_bytes: bytes, 
-        nonce: bytes, 
-        ciphertext: bytes
+        ephemeral_public_key_bytes: Any,
+        nonce: Any,
+        ciphertext: Any
     ) -> Dict[str, Any]:
-        """Decrypt data using ECDH + AES-GCM"""
+        """Decrypt dictionary data using ECDH + AES-GCM"""
+        plaintext_bytes = self._decrypt_bytes_with_ecdh_aesgcm(
+            ephemeral_public_key_bytes,
+            nonce,
+            ciphertext
+        )
+        return json.loads(plaintext_bytes.decode())
+
+    def decrypt_bytes_with_ecdh_aesgcm(
+        self,
+        ephemeral_public_key_bytes: Any,
+        nonce: Any,
+        ciphertext: Any
+    ) -> bytes:
+        """Decrypt raw bytes using ECDH + AES-GCM"""
+        return self._decrypt_bytes_with_ecdh_aesgcm(
+            ephemeral_public_key_bytes,
+            nonce,
+            ciphertext
+        )
+
+    def _decrypt_bytes_with_ecdh_aesgcm(
+        self,
+        ephemeral_public_key_bytes: Any,
+        nonce: Any,
+        ciphertext: Any
+    ) -> bytes:
+        """Decrypt bytes using ECDH + AES-GCM"""
         if not self._private_key:
             raise EncryptionError("Private key not available for decryption")
         
         try:
+            if isinstance(ephemeral_public_key_bytes, str):
+                ephemeral_public_key_bytes = CryptoManager.safe_b64decode(ephemeral_public_key_bytes)
+            if isinstance(nonce, str):
+                nonce = CryptoManager.safe_b64decode(nonce)
+            if isinstance(ciphertext, str):
+                ciphertext = CryptoManager.safe_b64decode(ciphertext)
+
             ephemeral_public_key = ec.EllipticCurvePublicKey.from_encoded_point(
                 ec.SECP256R1(), ephemeral_public_key_bytes
             )
@@ -172,87 +234,13 @@ class CryptoManager:
             ).derive(shared_secret)
             
             aesgcm = AESGCM(derived_key)
-            plaintext_bytes = aesgcm.decrypt(nonce, ciphertext, None)
-            return json.loads(plaintext_bytes.decode())
+            return aesgcm.decrypt(nonce, ciphertext, None)
         except Exception as e:
             logger.error("Decryption failed", exc_info=True)
             raise EncryptionError(f"Decryption failed: {e}")
 
 
-class CacheManager:
-    """Manages cell cache with async file operations"""
-    
-    def __init__(self, config: ClientConfig):
-        self.config = config
-        self.cache_file = config.credentials_path / "cells.json"
-        self._lock = asyncio.Lock()
-        self._memory_cache: Optional[List[Dict[str, Any]]] = None
-        self._cache_time: Optional[float] = None
-    
-    async def get_cells(self) -> List[Dict[str, Any]]:
-        """Get cached cells if valid, otherwise fetch new"""
-        async with self._lock:
-            # Check memory cache first
-            if self._is_memory_cache_valid():
-                logger.debug("Using in-memory cache")
-                return self._memory_cache
-            
-            # Check file cache
-            if await self._is_file_cache_valid():
-                logger.debug("Using file cache")
-                cells = await self._load_from_file()
-                self._update_memory_cache(cells)
-                return cells
-            
-            return None
-    
-    async def update_cells(self, cells: List[Dict[str, Any]]) -> None:
-        """Update cache with new cell data"""
-        async with self._lock:
-            self._update_memory_cache(cells)
-            await self._save_to_file(cells)
-    
-    def _is_memory_cache_valid(self) -> bool:
-        """Check if memory cache is still valid"""
-        if not self._memory_cache or not self._cache_time:
-            return False
-        return (time.time() - self._cache_time) < self.config.cache_expiry
-    
-    async def _is_file_cache_valid(self) -> bool:
-        """Check if file cache is still valid"""
-        if not self.cache_file.exists():
-            return False
-        
-        try:
-            file_mtime = os.path.getmtime(self.cache_file)
-            return (time.time() - file_mtime) < self.config.cache_expiry
-        except OSError:
-            return False
-    
-    async def _load_from_file(self) -> List[Dict[str, Any]]:
-        """Load cells from cache file"""
-        try:
-            async with aiofiles.open(self.cache_file, 'r') as f:
-                content = await f.read()
-                return json.loads(content)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logger.warning(f"Failed to load cache file: {e}")
-            return []
-    
-    async def _save_to_file(self, cells: List[Dict[str, Any]]) -> None:
-        """Save cells to cache file"""
-        try:
-            self.config.credentials_path.mkdir(parents=True, exist_ok=True)
-            async with aiofiles.open(self.cache_file, 'w') as f:
-                await f.write(json.dumps(cells, indent=4))
-            logger.debug("Cache file updated")
-        except Exception as e:
-            logger.error(f"Failed to save cache file: {e}")
-    
-    def _update_memory_cache(self, cells: List[Dict[str, Any]]) -> None:
-        """Update in-memory cache"""
-        self._memory_cache = cells
-        self._cache_time = time.time()
+
 
 
 class NetworkClient:
@@ -343,7 +331,6 @@ class BaseClient(ABC):
         self.config = config or ClientConfig()
         self.env: Dict[str, str] = {}
         self._crypto: Optional[CryptoManager] = None
-        self._cache_manager = CacheManager(self.config)
         self._network_client = NetworkClient(self.config)
         self.host = ""
         self.network = self.config.network
@@ -403,20 +390,14 @@ class BaseClient(ABC):
         return None
     
 
-    async def list_cells(self, update: bool = False) -> List[Dict[str, Any]]:
-        """List all available cells with optional cache refresh"""
-        if not update:
-            cached_cells = await self._cache_manager.get_cells()
-            if cached_cells is not None:
-                return cached_cells
-
+    async def list_cells(self) -> List[Dict[str, Any]]:
+        """List all available cells (always fetches fresh from server)"""
         full_url = f"https://{self.network}/api/list_cells"
         payload = {"cell": self.to_dict()}
         
         try:
             data = await self._network_client.post_request(full_url, payload)
             cells = data.get("Cells", []) if data else []
-            await self._cache_manager.update_cells(cells)
             return cells
         except NetworkError as e:
             logger.error(f"Failed to fetch cells: {e}")
@@ -544,8 +525,31 @@ class BaseClient(ABC):
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
 
+            session = await self.fetch_session_metadata(session_id)
+            if not session:
+                logger.error(f"Session not found: {session_id}")
+                return False
+
+            sender_public_key_pem = self._crypto.get_public_key_pem()
+            receiver_public_key_pem = session.get("receiver_public_key")
+            if not receiver_public_key_pem:
+                logger.error(f"No receiver public key in session metadata yet for session {session_id}")
+                return False
+
+            sender_public_key = self._crypto.load_public_key_from_pem(sender_public_key_pem)
+            receiver_public_key = self._crypto.load_public_key_from_pem(receiver_public_key_pem)
+
+            cipher_for_sender = self._crypto.encrypt_bytes_with_ecdh_aesgcm(sender_public_key, file_bytes)
+            cipher_for_receiver = self._crypto.encrypt_bytes_with_ecdh_aesgcm(receiver_public_key, file_bytes)
+
+            encrypted_file_payload = {
+                "cipher_for_sender": cipher_for_sender,
+                "cipher_for_receiver": cipher_for_receiver,
+            }
+            encrypted_file_bytes = json.dumps(encrypted_file_payload).encode("utf-8")
+
             form = aiohttp.FormData()
-            form.add_field("file", file_bytes, filename=filename, content_type=mime_type)
+            form.add_field("file", encrypted_file_bytes, filename=filename, content_type=mime_type)
 
             async with self._network_client._session.post(full_url, data=form) as response:
                 if response.status == 403:
@@ -560,6 +564,8 @@ class BaseClient(ABC):
                 "filename": filename,
                 "size": file_size,
                 "mime_type": mime_type,
+                "cipher_for_sender": cipher_for_sender,
+                "cipher_for_receiver": cipher_for_receiver,
             })
 
         except aiohttp.ClientError as e:
@@ -588,7 +594,30 @@ class BaseClient(ABC):
                 if response.status == 404:
                     raise NetworkError(f"File not found: {file_id}")
                 response.raise_for_status()
-                return await response.read()
+                encrypted_file_bytes = await response.read()
+
+            try:
+                encrypted_payload = json.loads(encrypted_file_bytes.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                encrypted_payload = None
+
+            session_messages = await self.get_session_messages(session_id)
+            for message in session_messages:
+                data = message.get("data")
+                if not isinstance(data, dict):
+                    continue
+                if data.get("action") != "file" or data.get("file_id") != file_id:
+                    continue
+
+                if isinstance(encrypted_payload, dict):
+                    cipher_key = "cipher_for_sender" if message.get("sender") == self.host else "cipher_for_receiver"
+                    cipher = encrypted_payload.get(cipher_key)
+                    if cipher:
+                        return self._crypto.decrypt_bytes_with_ecdh_aesgcm(
+                            cipher.get("ephemeralPublicKey"),
+                            cipher.get("nonce"),
+                            cipher.get("ciphertext")
+                        )
         except aiohttp.ClientError as e:
             raise NetworkError(f"Failed to download file: {e}")
 
