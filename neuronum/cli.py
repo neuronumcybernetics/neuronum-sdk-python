@@ -114,7 +114,7 @@ def encrypt_mnemonic(mnemonic: str, password: str) -> dict:
         "ciphertext": base64.b64encode(ciphertext).decode(),
     }
 
-def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: bytes, cell_type: str, network: str = None):
+def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: bytes, network: str = None):
     """Save cell credentials to .neuronum directory with secure file permissions."""
     import os
     if network is None:
@@ -123,7 +123,7 @@ def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: b
         NEURONUM_PATH.mkdir(parents=True, exist_ok=True)
 
         # Save environment configuration with sensitive data
-        env_content = f"HOST={host}\nOPERATOR={operator}\nTYPE={cell_type}\nNETWORK={network}\n"
+        env_content = f"HOST={host}\nOPERATOR={operator}\nNETWORK={network}\n"
         ENV_FILE.write_text(env_content)
         os.chmod(ENV_FILE, 0o600)  # Owner read/write only
 
@@ -158,7 +158,6 @@ def load_credentials():
                     credentials[key] = value.strip().strip('"')
 
         credentials['host'] = credentials.get("HOST")
-        credentials['type'] = credentials.get("TYPE")
         credentials['operator'] = credentials.get("OPERATOR")
         network = credentials.get("NETWORK", DEFAULT_NETWORK)
         credentials['network'] = network
@@ -312,7 +311,7 @@ def create_cell():
     host = result.get("host")
 
     # 7. Save credentials and connect
-    if save_credentials(host, business_name, pem_public, pem_private, "business", network):
+    if save_credentials(host, business_name, pem_public, pem_private, network):
         click.echo(f"\nBusiness Cell created and connected successfully!")
         click.echo(f"Host: {host}")
         click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
@@ -381,14 +380,13 @@ def connect_cell():
         response.raise_for_status()
         host = response.json().get("host")
         operator = response.json().get("operator")
-        cell_type = response.json().get("cell_type")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error:Error connecting to cell: {e}")
         return
 
     # 5. Save Credentials
-    if host and cell_type:
-        if save_credentials(host, operator, pem_public, pem_private, cell_type, network):
+    if host:
+        if save_credentials(host, operator, pem_public, pem_private, network):
             click.echo(f"Successfully connected to Cell '{host}'.")
         # Error saving credentials already echoed in helper
     else:

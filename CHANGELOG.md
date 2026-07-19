@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.08 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  cell_type removed from `connect_cell` and `save_credentials` functions
+
 ### 2026.07.07 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  `upload_session_file` now uploads files encrypted
