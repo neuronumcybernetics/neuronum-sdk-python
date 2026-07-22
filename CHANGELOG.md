@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.09 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  optional subject parameter added to `create_secure_agent_session` - !Notice: Subject is sent in plaintext!
+
 ### 2026.07.08 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  cell_type removed from `connect_cell` and `save_credentials` functions

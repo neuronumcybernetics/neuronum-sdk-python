@@ -418,7 +418,7 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch sessions: {e}")
             return []
 
-    async def create_secure_agent_session(self, instruct: str | None = None, email: str | None = None, cell_id: str | None = None) -> Optional[Dict[str, Any]]:
+    async def create_secure_agent_session(self, instruct: str | None = None, email: str | None = None, cell_id: str | None = None, subject: str | None = None) -> Optional[Dict[str, Any]]:
         """Create a secure B2B session using either a cell_id or an email."""
 
         if not email and not cell_id:
@@ -438,6 +438,7 @@ class BaseClient(ABC):
             "instruct": encrypted_instruct,
             "email": email,
             "cell_id": cell_id,
+            "subject": subject,
         }
 
         try:

@@ -111,6 +111,7 @@ async def create_secure_agent_session(
     email: str | None = None,
     cell_id: str | None = None,
     instruct: str | None = None,
+    subject: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a secure agent session and send an invitation, optionally instructing the agent.
@@ -119,6 +120,7 @@ async def create_secure_agent_session(
         email: Optional email address of the receiver.
         cell_id: Optional cell_id of the receiver.
         instruct: Optional instructions or goals for the agent.
+        subject: Optional subject for the session.
 
     Returns:
         Session metadata returned by the server.
@@ -135,6 +137,7 @@ async def create_secure_agent_session(
         instruct=instruct,
         email=email,
         cell_id=cell_id,
+        subject=subject,
     )
 
     return result or {}
