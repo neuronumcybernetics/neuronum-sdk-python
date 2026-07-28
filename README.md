@@ -368,4 +368,3 @@ neuronum neuronum start-mcp
 
 ### **Full Documentation**
 Visit the [Neuronum Docs](https://neuronum.net/docs) for the complete SDK reference.
-# neuronum-server
