@@ -99,7 +99,7 @@ Cells interact on Neuronum using the following methods:
 |--------|-------------|
 | `list_cells()` | List all Neuronum Cells |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
-| `create_secure_agent_session(email or cell_id, instruct=None, subject=None)` | Create and invite to a session via email or cell_id, optionally setting agent instructions and session password |
+| `create_secure_agent_session(recipient, instruct=None, subject=None)` | Create and invite to a session via email or cell_id, optionally setting agent instructions and session password |
 | `fetch_session_metadata(session_id)` | Fetch session metadata |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
@@ -150,7 +150,7 @@ from neuronum import Cell
 async def main():
     async with Cell() as cell:
         session = await cell.create_secure_agent_session(
-            email="your@email.com",  #or cell_id="acme.com::cell"
+            recipient="your@email.com",  #or recipient="acme.com::cell"
             instruct="Set specific goals, conversation context or further instructions",  #optional
             subject="Set session subject"  #optional - !Notice: Subject is sent in plaintext!
         )

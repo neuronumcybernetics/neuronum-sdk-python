@@ -403,7 +403,6 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch cells: {e}")
             return []
 
-
     async def list_sessions(self) -> List[Dict[str, Any]]:
         """List all secure cell sessions for this cell."""
         
@@ -418,13 +417,16 @@ class BaseClient(ABC):
             logger.error(f"Failed to fetch sessions: {e}")
             return []
 
-    async def create_secure_agent_session(self, instruct: str | None = None, email: str | None = None, cell_id: str | None = None, subject: str | None = None) -> Optional[Dict[str, Any]]:
-        """Create a secure B2B session using either a cell_id or an email."""
+    async def create_secure_agent_session(
+        self,
+        recipient: str,
+        instruct: str | None = None,
+        subject: str | None = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create a secure B2B session using a single recipient value (cell_id or email)."""
 
-        if not email and not cell_id:
-            raise ValueError("Either email or cell_id must be provided.")
-        if email and cell_id:
-            raise ValueError("Only one of email or cell_id may be provided, not both.")
+        if not recipient:
+            raise ValueError("recipient is required.")
 
         encrypted_instruct = None
         if instruct:
@@ -436,8 +438,7 @@ class BaseClient(ABC):
         payload = {
             "cell": self.to_dict(),
             "instruct": encrypted_instruct,
-            "email": email,
-            "cell_id": cell_id,
+            "recipient": recipient,
             "subject": subject,
         }
 
@@ -445,7 +446,7 @@ class BaseClient(ABC):
             data = await self._network_client.post_request(full_url, payload)
             return data
         except NetworkError as e:
-            logger.error(f"Failed to create secure cell session: {e}")
+            logger.error(f"Failed to create secure agent session: {e}")
             return None
 
     
@@ -453,10 +454,10 @@ class BaseClient(ABC):
         """Fetch and decrypt all messages for a session."""
 
         if not isinstance(self, Cell):
-            raise ValueError("sync_session_messages must be called from an Cell instance")
+            raise ValueError("get_session_messages must be called from an Cell instance")
 
         if not getattr(self, 'host', None):
-            raise ValueError("host is required for sync_session_messages")
+            raise ValueError("host is required for get_session_messages")
 
         if not self._crypto:
             raise EncryptionError("Crypto manager not initialized")
@@ -498,7 +499,7 @@ class BaseClient(ABC):
                     continue
 
         except NetworkError as e:
-            logger.error(f"Failed to sync session messages: {e}")
+            logger.error(f"Failed to get session messages: {e}")
 
         return result
 

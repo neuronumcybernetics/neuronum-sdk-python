@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.07.10 / Not-Production Ready (Network in Testing)
+**Changes:**
+-  replaced optional email and cell_id in `create_secure_agent_session` with a required "recipient" parameter
+
 ### 2026.07.09 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  optional subject parameter added to `create_secure_agent_session` - !Notice: Subject is sent in plaintext!
