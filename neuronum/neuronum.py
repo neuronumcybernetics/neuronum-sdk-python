@@ -39,8 +39,8 @@ class EncryptionError(NeuronumError):
     pass
 
 
-class CellNotFoundError(NeuronumError):
-    """Raised when a cell cannot be found"""
+class AgentNotFoundError(NeuronumError):
+    """Raised when an agent cannot be found"""
     pass
 
 
@@ -390,24 +390,24 @@ class BaseClient(ABC):
         return None
     
 
-    async def list_cells(self) -> List[Dict[str, Any]]:
-        """List all available cells (always fetches fresh from server)"""
-        full_url = f"https://{self.network}/api/list_cells"
-        payload = {"cell": self.to_dict()}
+    async def list_agents(self) -> List[Dict[str, Any]]:
+        """List all available agents (always fetches fresh from server)"""
+        full_url = f"https://{self.network}/api/list_agents"
+        payload = {"agent": self.to_dict()}
         
         try:
             data = await self._network_client.post_request(full_url, payload)
-            cells = data.get("Cells", []) if data else []
-            return cells
+            agents = data.get("Agents", []) if data else []
+            return agents
         except NetworkError as e:
-            logger.error(f"Failed to fetch cells: {e}")
+            logger.error(f"Failed to fetch agents: {e}")
             return []
 
     async def list_sessions(self) -> List[Dict[str, Any]]:
-        """List all secure cell sessions for this cell."""
+        """List all secure agent sessions for this agent."""
         
         full_url = f"https://{self.network}/api/list_sessions"
-        payload = {"cell": self.to_dict()}
+        payload = {"agent": self.to_dict()}
 
         try:
             data = await self._network_client.post_request(full_url, payload)
@@ -423,7 +423,7 @@ class BaseClient(ABC):
         instruct: str | None = None,
         subject: str | None = None,
     ) -> Optional[Dict[str, Any]]:
-        """Create a secure B2B session using a single recipient value (cell_id or email)."""
+        """Create a secure B2B session using a single recipient value (agent_id or email)."""
 
         if not recipient:
             raise ValueError("recipient is required.")
@@ -436,7 +436,7 @@ class BaseClient(ABC):
         full_url = f"https://{self.network}/api/create_secure_agent_session"
 
         payload = {
-            "cell": self.to_dict(),
+            "agent": self.to_dict(),
             "instruct": encrypted_instruct,
             "recipient": recipient,
             "subject": subject,
@@ -453,8 +453,8 @@ class BaseClient(ABC):
     async def get_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Fetch and decrypt all messages for a session."""
 
-        if not isinstance(self, Cell):
-            raise ValueError("get_session_messages must be called from an Cell instance")
+        if not isinstance(self, Agent):
+            raise ValueError("get_session_messages must be called from an Agent instance")
 
         if not getattr(self, 'host', None):
             raise ValueError("host is required for get_session_messages")
@@ -463,7 +463,7 @@ class BaseClient(ABC):
             raise EncryptionError("Crypto manager not initialized")
 
         full_url = f"https://{self.network}/api/get_session_messages/{session_id}"
-        payload = {"cell": self.to_dict()}
+        payload = {"agent": self.to_dict()}
 
         result = []
         try:
@@ -627,8 +627,8 @@ class BaseClient(ABC):
     async def sync_messages(self) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream and decrypt real-time messages from all sessions via SSE."""
 
-        if not isinstance(self, Cell):
-            raise ValueError("sync_messages must be called from a Cell instance")
+        if not isinstance(self, Agent):
+            raise ValueError("sync_messages must be called from an Agent instance")
 
         if not getattr(self, 'host', None):
             raise ValueError("host is required for sync_messages")
@@ -642,7 +642,7 @@ class BaseClient(ABC):
         try:
             sse_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None))
             logger.info(f"SSE connecting to {full_url}")
-            async with sse_session.post(full_url, json={"cell": payload}) as response:
+            async with sse_session.post(full_url, json={"agent": payload}) as response:
                 logger.info(f"SSE response status: {response.status} headers: {dict(response.headers)}")
                 response.raise_for_status()
                 logger.info("SSE stream open, waiting for events...")
@@ -696,10 +696,10 @@ class BaseClient(ABC):
 
 
     async def send_session_message(self, session_id: str, data: Dict[str, Any]) -> bool:
-        """Send an encrypted message to a secure cell session."""
+        """Send an encrypted message to a secure agent session."""
         
-        if not isinstance(self, Cell):
-            raise ValueError("send_session_message must be called from an Cell instance")
+        if not isinstance(self, Agent):
+            raise ValueError("send_session_message must be called from an Agent instance")
 
         if not getattr(self, 'host', None):
             raise ValueError("host is required for send_session_message")
@@ -737,7 +737,7 @@ class BaseClient(ABC):
 
         # 4) Build payload
         payload = {
-            "cell": self.to_dict(),
+            "agent": self.to_dict(),
             "data": {
                 "cipher_for_sender": cipher_for_sender,
                 "cipher_for_receiver": cipher_for_receiver
@@ -761,8 +761,8 @@ class BaseClient(ABC):
             return False
 
 
-class Cell(BaseClient):
-    """Cell client implementation"""
+class Agent(BaseClient):
+    """Agent client implementation"""
 
     def __init__(self, config: Optional[ClientConfig] = None, network: str = "neuronum.net"):
         if config is None:

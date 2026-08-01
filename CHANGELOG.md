@@ -7,19 +7,23 @@
   <a href="https://neuronum.net">
     <img src="https://img.shields.io/badge/Website-Neuronum-blue" alt="Website">
   </a>
-  <a href="https://github.com/neuronumcybernetics/cell-sdk-python">
+  <a href="https://github.com/neuronumcybernetics/neuronum-sdk-python">
     <img src="https://img.shields.io/badge/Docs-Read%20now-green" alt="Documentation">
   </a>
   <a href="https://pypi.org/project/neuronum/">
     <img src="https://img.shields.io/pypi/v/neuronum.svg" alt="PyPI Version">
   </a>
   <img src="https://img.shields.io/badge/Python-3.8%2B-yellow" alt="Python Version">
-  <a href="https://github.com/neuronumcybernetics/cell-sdk-python/blob/main/LICENSE.md">
+  <a href="https://github.com/neuronumcybernetics/neuronum-sdk-python/blob/main/LICENSE.md">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
 </p>
 
 ---
+### 2026.07.11 / Beta Launch
+**Changes:**
+-  replaced Neuronum Cell based identity into `Agent` (::cell, cell_id -> ::agent, agent_id)
+
 ### 2026.07.10 / Not-Production Ready (Network in Testing)
 **Changes:**
 -  replaced optional email and cell_id in `create_secure_agent_session` with a required "recipient" parameter

@@ -1,1 +1,1 @@
-from .neuronum import Cell
+from .neuronum import Agent

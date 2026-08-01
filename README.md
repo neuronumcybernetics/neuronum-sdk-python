@@ -14,7 +14,7 @@
     <img src="https://img.shields.io/pypi/v/neuronum.svg" alt="PyPI Version">
   </a><br>
   <img src="https://img.shields.io/badge/Python-3.8%2B-yellow" alt="Python Version">
-  <a href="https://github.com/neuronumcybernetics/cell-sdk-python/blob/main/LICENSE.md">
+  <a href="https://github.com/neuronumcybernetics/neuronum-sdk-python/blob/main/LICENSE.md">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
 </p>
@@ -51,55 +51,55 @@ pip install neuronum
 
 ------------------
 
-### **Cell**
+### **Agent**
 
-A Cell is your address used to send and receive data on the Neuronum network. You can think of it like a unique digital identity.
+An Agent is your address used to send and receive data on the Neuronum network. You can think of it like a unique digital identity.
 
 Example IDs: 
-acme.com::cell 
+acme.com::agent 
 
-**Create a Cell:**
+**Create an Agent:**
 ```sh
-neuronum create-cell
+neuronum create-agent
 ```
-This generates your Cell ID, public/private key pair, and a 12-word mnemonic recovery phrase. Your Cell credentials are stored locally at `~/.neuronum/.env`.
+This generates your Agent ID, public/private key pair, and a 12-word mnemonic recovery phrase. Your Agent credentials are stored locally at `~/.neuronum/.env`.
 
-**Connect your Cell** to a device using your 12-word mnemonic:
+**Connect your Agent** to a device using your 12-word mnemonic:
 ```sh
-neuronum connect-cell
-```
-
-**View** the connected Cell ID:
-```sh
-neuronum view-cell
+neuronum connect-agent
 ```
 
-**Verify** the connected Cell ID:
+**View** the connected Agent ID:
 ```sh
-neuronum verify-cell
+neuronum view-agent
 ```
 
-**Disconnect** Cell credentials from this device:
+**Verify** the connected Agent ID:
 ```sh
-neuronum disconnect-cell
+neuronum verify-agent
 ```
 
-**Delete** your Cell permanently from the network:
+**Disconnect** Agent credentials from this device:
 ```sh
-neuronum delete-cell
+neuronum disconnect-agent
+```
+
+**Delete** your Agent permanently from the network:
+```sh
+neuronum delete-agent
 ```
 
 ------------------
 
 ### **Methods**
 
-Cells interact on Neuronum using the following methods:
+Agents interact on Neuronum using the following methods:
 
 | Method | Description |
 |--------|-------------|
-| `list_cells()` | List all Neuronum Cells |
+| `list_agents()` | List all Neuronum Agents |
 | `list_sessions()` | List your Secure Agent Sessions (SAS) |
-| `create_secure_agent_session(recipient, instruct=None, subject=None)` | Create and invite to a session via email or cell_id, optionally setting agent instructions and session password |
+| `create_secure_agent_session(recipient, instruct=None, subject=None)` | Create and invite to a session via email or agent_id, optionally setting agent instructions and session password |
 | `fetch_session_metadata(session_id)` | Fetch session metadata |
 | `send_session_message(session_id, data)` | Send an encrypted message to a session |
 | `get_session_messages(session_id)` | Fetch and decrypt messages from a session |
@@ -110,21 +110,21 @@ Cells interact on Neuronum using the following methods:
 
 All data is end-to-end encrypted. The network handles routing, key exchange, and delivery. You just send and receive.
 
-**Connecting to the network:** Use `async with Cell() as cell` to connect. This reads your Cell credentials from `~/.neuronum/.env` and establishes a connection to the Neuronum network at `neuronum.net`. Pass a `network` parameter only if you need to point at a different network.
+**Connecting to the network:** Use `async with Agent() as agent` to connect. This reads your Agent credentials from `~/.neuronum/.env` and establishes a connection to the Neuronum network at `neuronum.net`. Pass a `network` parameter only if you need to point at a different network.
 
 ------------------
 
 ### **Quick Examples**
 
-**List Cells**
+**List Agents**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        cells = await cell.list_cells()
-        print(cells)
+    async with Agent() as agent:
+        agents = await agent.list_agents()
+        print(agents)
 
 asyncio.run(main())
 ```
@@ -132,11 +132,11 @@ asyncio.run(main())
 **List Sessions**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        sessions = await cell.list_sessions()
+    async with Agent() as agent:
+        sessions = await agent.list_sessions()
         print(sessions)
 
 asyncio.run(main())
@@ -145,12 +145,12 @@ asyncio.run(main())
 **Create a Secure Agent Session**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        session = await cell.create_secure_agent_session(
-            recipient="your@email.com",  #or recipient="acme.com::cell"
+    async with Agent() as agent:
+        session = await agent.create_secure_agent_session(
+            recipient="your@email.com",  #or recipient="acme.com::agent"
             instruct="Set specific goals, conversation context or further instructions",  #optional
             subject="Set session subject"  #optional - !Notice: Subject is sent in plaintext!
         )
@@ -162,11 +162,11 @@ asyncio.run(main())
 **Fetch Session Metadata**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        metadata = await cell.fetch_session_metadata("session_id")
+    async with Agent() as agent:
+        metadata = await agent.fetch_session_metadata("session_id")
         print(metadata)
 
 asyncio.run(main())
@@ -175,11 +175,11 @@ asyncio.run(main())
 **Send a message to a session**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        success = await cell.send_session_message(
+    async with Agent() as agent:
+        success = await agent.send_session_message(
             "session_id",
             {"msg": "Hello"}
         )
@@ -191,11 +191,11 @@ asyncio.run(main())
 **Fetch messages from a session**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        messages = await cell.get_session_messages(session_id)
+    async with Agent() as agent:
+        messages = await agent.get_session_messages(session_id)
         print(messages)
 
 asyncio.run(main())
@@ -204,11 +204,11 @@ asyncio.run(main())
 **Upload a file to a session**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        success = await cell.upload_session_file(
+    async with Agent() as agent:
+        success = await agent.upload_session_file(
             "session_id",
             "/path/to/file.pdf",
             mime_type="application/pdf"
@@ -224,11 +224,11 @@ The `file_id` is available in the file metadata message sent automatically after
 
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        file_bytes = await cell.download_session_file("session_id", "file_id")
+    async with Agent() as agent:
+        file_bytes = await agent.download_session_file("session_id", "file_id")
         with open("output.pdf", "wb") as f:
             f.write(file_bytes)
 
@@ -238,11 +238,11 @@ asyncio.run(main())
 **Receive messages in real-time**
 ```python
 import asyncio
-from neuronum import Cell
+from neuronum import Agent
 
 async def main():
-    async with Cell() as cell:
-        async for message in cell.sync_messages():
+    async with Agent() as agent:
+        async for message in agent.sync_messages():
             print(message["session_id"], message["sender"], message["data"])
 
 asyncio.run(main())
@@ -267,7 +267,7 @@ Elements are UI components rendered on the client's frontend. Pass an `element` 
 
 **Confirm**
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Do you accept the session terms?",
     "element": "confirm"
 })
@@ -275,7 +275,7 @@ await cell.send_session_message(session_id, {
 
 **Choice**
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Which report format do you prefer?",
     "element": "choice",
     "choices": ["PDF", "CSV", "JSON"]
@@ -284,7 +284,7 @@ await cell.send_session_message(session_id, {
 
 **Input**
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "What is your company name?",
     "element": "input",
     "placeholder": "e.g. Acme Corp"
@@ -293,7 +293,7 @@ await cell.send_session_message(session_id, {
 
 **Form**
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Tell us about yourself:",
     "element": "form",
     "fields": [
@@ -306,7 +306,7 @@ await cell.send_session_message(session_id, {
 
 **Table**
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Here are the results:",
     "element": "table",
     "columns": ["Name", "Status", "Score"],
@@ -323,7 +323,7 @@ await cell.send_session_message(session_id, {
 A card combines multiple elements into a single message.
 
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Review this proposal:",
     "element": "card",
     "components": [
@@ -340,7 +340,7 @@ await cell.send_session_message(session_id, {
 Renders a file upload prompt on the client.
 
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Please upload your contract:",
     "element": "file"
 })
@@ -351,7 +351,7 @@ await cell.send_session_message(session_id, {
 Renders a clickable button that opens a URL in a new browser tab.
 
 ```python
-await cell.send_session_message(session_id, {
+await agent.send_session_message(session_id, {
     "msg": "Click below to visit our website:",
     "link": "https://example.com",
     "element": "link"

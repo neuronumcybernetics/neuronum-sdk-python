@@ -1,5 +1,5 @@
 """
-Neuronum CLI - Command-line interface for Neuronum Cell management.
+Neuronum CLI - Command-line interface for Neuronum Agent management.
 """
 
 import click
@@ -115,7 +115,7 @@ def encrypt_mnemonic(mnemonic: str, password: str) -> dict:
     }
 
 def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: bytes, network: str = None):
-    """Save cell credentials to .neuronum directory with secure file permissions."""
+    """Save agent credentials to .neuronum directory with secure file permissions."""
     import os
     if network is None:
         network = DEFAULT_NETWORK
@@ -141,12 +141,12 @@ def save_credentials(host: str, operator: str, pem_public: bytes, pem_private: b
         return False
 
 def load_credentials():
-    """Load cell credentials from .neuronum directory and return as dictionary."""
+    """Load agent credentials from .neuronum directory and return as dictionary."""
     credentials = {}
     try:
         # Load .env data (Host and Mnemonic)
         if not ENV_FILE.exists():
-            click.echo("Error: No credentials found. Please create or connect a cell first.")
+            click.echo("Error: No credentials found. Please create or connect an agent first.")
             return None
 
         with open(ENV_FILE, "r") as f:
@@ -186,14 +186,14 @@ def load_credentials():
 
 @click.group()
 def cli():
-    """Neuronum CLI App for Cell management."""
+    """Neuronum CLI App for Agent management."""
     pass
 
-# Cell Management Commands
+# Agent Management Commands
 
 @click.command()
-def create_cell():
-    """Creates a new Business Cell via email verification."""
+def create_agent():
+    """Creates a new Business Agent via email verification."""
 
     # 1. Select network
     network = questionary.text("Network URL:", default=DEFAULT_NETWORK).ask()
@@ -242,11 +242,11 @@ def create_cell():
     click.echo(f"Verification code sent to {business_email}.")
 
     # 3. Accept Terms of Service
-    click.echo("\nBy creating a Cell you agree to the Neuronum Terms of Service.")
+    click.echo("\nBy creating an Agent you agree to the Neuronum Terms of Service.")
     click.echo("Read them at: https://neuronum.net/legals")
     accepted = questionary.confirm("Do you accept the Terms of Service?").ask()
     if not accepted:
-        click.echo("You must accept the Terms of Service to create a Cell.")
+        click.echo("You must accept the Terms of Service to create an Agent.")
         return
 
     # 4. Enter verification code
@@ -287,7 +287,7 @@ def create_cell():
 
     try:
         response = requests.post(
-            f"{api_base_url}/create_cell",
+            f"{api_base_url}/create_agent",
             json={
                 "public_key": pem_public.decode("utf-8"),
                 "business_email": business_email,
@@ -312,19 +312,19 @@ def create_cell():
 
     # 7. Save credentials and connect
     if save_credentials(host, business_name, pem_public, pem_private, network):
-        click.echo(f"\nBusiness Cell created and connected successfully!")
+        click.echo(f"\nBusiness Agent created and connected successfully!")
         click.echo(f"Host: {host}")
         click.echo(f"\nYour 12-word mnemonic (SAVE THIS SECURELY):")
         click.echo(f"   {mnemonic}")
-        click.echo(f"\nNote:This mnemonic is the ONLY way to recover your Cell.")
+        click.echo(f"\nNote:This mnemonic is the ONLY way to recover your Agent.")
         click.echo(f"   Write it down and store it in a safe place!\n")
     else:
-        click.echo("Warning:Cell created on server but failed to connect locally.")
+        click.echo("Warning:Agent created on server but failed to connect locally.")
         click.echo(f"Your mnemonic: {mnemonic}")
 
 @click.command()
-def connect_cell():
-    """Connects to an existing Cell using a 12-word mnemonic."""
+def connect_agent():
+    """Connects to an existing Agent using a 12-word mnemonic."""
 
     # 1. Select network
     network = questionary.text("Network URL:", default=DEFAULT_NETWORK).ask()
@@ -367,8 +367,8 @@ def connect_cell():
         return
 
     # 4. Call API to Connect
-    click.echo("Attempting to connect to cell...")
-    url = f"{api_base_url}/connect_cell"
+    click.echo("Attempting to connect to agent...")
+    url = f"{api_base_url}/connect_agent"
     connect_data = {
         "public_key": public_key_pem_str,
         "signed_message": signature_b64,
@@ -381,35 +381,35 @@ def connect_cell():
         host = response.json().get("host")
         operator = response.json().get("operator")
     except requests.exceptions.RequestException as e:
-        click.echo(f"Error:Error connecting to cell: {e}")
+        click.echo(f"Error:Error connecting to agent: {e}")
         return
 
     # 5. Save Credentials
     if host:
         if save_credentials(host, operator, pem_public, pem_private, network):
-            click.echo(f"Successfully connected to Cell '{host}'.")
+            click.echo(f"Successfully connected to Agent '{host}'.")
         # Error saving credentials already echoed in helper
     else:
         click.echo("Error:Failed to retrieve host from server. Connection failed.")
 
 
 @click.command()
-def view_cell():
-    """Displays the connection status and host name of the current cell."""
+def view_agent():
+    """Displays the connection status and host name of the current agent."""
 
     credentials = load_credentials()
 
     if credentials:
         click.echo("\n")
         click.echo(f"Status:Connected")
-        click.echo(f"Cell ID:   {credentials['host']}")
+        click.echo(f"Agent ID:   {credentials['host']}")
         click.echo(f"Operator:   {credentials['operator']}")
         click.echo(f"Path:   {NEURONUM_PATH}")
         click.echo("----------------------------")
 
 
 @click.command()
-def verify_cell():
+def verify_agent():
     """Verify domain ownership and submit business details in one step."""
 
     credentials = load_credentials()
@@ -420,10 +420,10 @@ def verify_cell():
     private_key = credentials['private_key']
     api_base_url = credentials['api_base_url']
 
-    domain = host.replace("::cell", "").strip()
+    domain = host.replace("::agent", "").strip()
 
     # --- Pre-check: fetch current DNS + legal status ---
-    def make_cell_payload():
+    def make_agent_payload():
         ts = str(int(time.time()))
         msg = f"host={host};timestamp={ts}"
         sig = sign_message(private_key, msg.encode())
@@ -431,8 +431,8 @@ def verify_cell():
 
     click.echo("\nChecking current verification status...")
     try:
-        dns_resp = requests.post(f"{api_base_url}/check_dns_status", json={"cell": make_cell_payload()}, timeout=10)
-        legal_resp = requests.post(f"{api_base_url}/check_legal_status", json={"cell": make_cell_payload()}, timeout=10)
+        dns_resp = requests.post(f"{api_base_url}/check_dns_status", json={"agent": make_agent_payload()}, timeout=10)
+        legal_resp = requests.post(f"{api_base_url}/check_legal_status", json={"agent": make_agent_payload()}, timeout=10)
         dns_verified = dns_resp.status_code == 200 and dns_resp.json().get("status") == "True"
         legal_verified = legal_resp.status_code == 200 and legal_resp.json().get("status") == "True"
     except requests.exceptions.RequestException:
@@ -440,7 +440,7 @@ def verify_cell():
         legal_verified = False
 
     if dns_verified and legal_verified:
-        click.echo(f"Cell {host} ({credentials['operator']}) is already fully verified (DNS + Legal Entity).")
+        click.echo(f"Agent {host} ({credentials['operator']}) is already fully verified (DNS + Legal Entity).")
         return
 
     if dns_verified:
@@ -496,7 +496,7 @@ def verify_cell():
     click.echo("\nSubmitting verification...")
     try:
         response = requests.post(
-            f"{api_base_url}/verify_cell",
+            f"{api_base_url}/verify_agent",
             json={
                 "host": host,
                 "signed_message": signature_b64,
@@ -517,16 +517,16 @@ def verify_cell():
         return
 
     if str(result.get("success", "")).lower() == "true":
-        click.echo(f"\nCell verification successfully submitted.")
-        click.echo("use `verify-cell` to check the verification status.")
+        click.echo(f"\nAgent verification successfully submitted.")
+        click.echo("use `verify-agent` to check the verification status.")
     else:
         click.echo(f"\nVerification failed.")
         click.echo(f"Server response: {result.get('detail') or result}")
 
 
 @click.command()
-def delete_cell():
-    """Deletes the locally stored credentials and requests cell deletion from the server."""
+def delete_agent():
+    """Deletes the locally stored credentials and requests agent deletion from the server."""
 
     # 1. Load Credentials
     credentials = load_credentials()
@@ -552,8 +552,8 @@ def delete_cell():
         return
 
     # 4. Call API to Delete
-    click.echo(f"Requesting deletion of cell '{host}'...")
-    url = f"{credentials['api_base_url']}/delete_cell"
+    click.echo(f"Requesting deletion of agent '{host}'...")
+    url = f"{credentials['api_base_url']}/delete_agent"
     payload = {
         "host": host,
         "signed_message": signature_b64,
@@ -575,16 +575,16 @@ def delete_cell():
             PRIVATE_KEY_FILE.unlink(missing_ok=True)
             PUBLIC_KEY_FILE.unlink(missing_ok=True)
 
-            click.echo(f"Neuronum Cell '{host}' has been deleted and local credentials removed.")
+            click.echo(f"Neuronum Agent '{host}' has been deleted and local credentials removed.")
         except Exception as e:
-            click.echo(f"Warning:Warning: Successfully deleted cell on server, but failed to clean up all local files: {e}")
+            click.echo(f"Warning:Warning: Successfully deleted agent on server, but failed to clean up all local files: {e}")
     else:
-        click.echo(f"Error:Neuronum Cell '{host}' deletion failed on server.")
+        click.echo(f"Error:Neuronum Agent '{host}' deletion failed on server.")
 
 
 @click.command()
-def disconnect_cell():
-    """Removes local credentials without deleting the cell on the server."""
+def disconnect_agent():
+    """Removes local credentials without deleting the agent on the server."""
 
     # Check if any files exist to avoid unnecessary actions
     if not ENV_FILE.exists() and not PRIVATE_KEY_FILE.exists() and not PUBLIC_KEY_FILE.exists():
@@ -592,7 +592,7 @@ def disconnect_cell():
         return
 
     # 1. Confirmation
-    confirm = click.confirm("Are you sure you want to disconnect? This will remove all local key files and the mnemonic, but your cell will remain active on the server.", default=False)
+    confirm = click.confirm("Are you sure you want to disconnect? This will remove all local key files and the mnemonic, but your agent will remain active on the server.", default=False)
     if not confirm:
         click.echo("Disconnection canceled.")
         return
@@ -617,7 +617,7 @@ def disconnect_cell():
 
         if files_removed > 0:
             click.echo(f"Successfully disconnected. Your credentials are now removed locally.")
-            click.echo("You can reconnect later using your 12-word mnemonic (via `connect-cell`).")
+            click.echo("You can reconnect later using your 12-word mnemonic (via `connect-agent`).")
         else:
             click.echo("Info:No credentials were found to remove.")
 
@@ -637,12 +637,12 @@ def start_mcp(network):
 
 # CLI Command Registration
 
-cli.add_command(create_cell)
-cli.add_command(connect_cell)
-cli.add_command(view_cell)
-cli.add_command(verify_cell)
-cli.add_command(delete_cell)
-cli.add_command(disconnect_cell)
+cli.add_command(create_agent)
+cli.add_command(connect_agent)
+cli.add_command(view_agent)
+cli.add_command(verify_agent)
+cli.add_command(delete_agent)
+cli.add_command(disconnect_agent)
 cli.add_command(start_mcp)
 
 if __name__ == "__main__":
