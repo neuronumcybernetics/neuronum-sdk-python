@@ -1,5 +1,5 @@
 """
-Neuronum CLI - Command-line interface for Neuronum Agent management.
+Neuronum CLI - Command-line interface for Neuronum AgentIdentity management.
 """
 
 import click
@@ -189,14 +189,20 @@ def cli():
     """Neuronum CLI App for Agent management."""
     pass
 
+
+@cli.group()
+def agent():
+    """Manage Neuronum agents."""
+    pass
+
 # Agent Management Commands
 
-@click.command()
+@agent.command("create")
 def create_agent():
     """Creates a new Business Agent via email verification."""
 
     # 1. Select network
-    network = questionary.text("Network URL:", default=DEFAULT_NETWORK).ask()
+    network = questionary.text("Network:", default=DEFAULT_NETWORK).ask()
     if not network:
         click.echo("Canceled.")
         return
@@ -322,7 +328,7 @@ def create_agent():
         click.echo("Warning:Agent created on server but failed to connect locally.")
         click.echo(f"Your mnemonic: {mnemonic}")
 
-@click.command()
+@agent.command("connect")
 def connect_agent():
     """Connects to an existing Agent using a 12-word mnemonic."""
 
@@ -335,7 +341,7 @@ def connect_agent():
     api_base_url = f"https://{network}/api"
 
     # 2. Get and Validate Mnemonic
-    mnemonic = questionary.password("Enter your 12-word BIP-39 mnemonic (space separated):").ask()
+    mnemonic = questionary.password("Enter Agent Identity Recovery Phrase:").ask()
 
     if not mnemonic:
         click.echo("Connection canceled.")
@@ -367,7 +373,7 @@ def connect_agent():
         return
 
     # 4. Call API to Connect
-    click.echo("Attempting to connect to agent...")
+    click.echo("Attempting to connect Agent ID...")
     url = f"{api_base_url}/connect_agent"
     connect_data = {
         "public_key": public_key_pem_str,
@@ -387,144 +393,54 @@ def connect_agent():
     # 5. Save Credentials
     if host:
         if save_credentials(host, operator, pem_public, pem_private, network):
-            click.echo(f"Successfully connected to Agent '{host}'.")
+            click.echo(f"Agent ID '{host}' connected.")
         # Error saving credentials already echoed in helper
     else:
         click.echo("Error:Failed to retrieve host from server. Connection failed.")
 
 
-@click.command()
-def view_agent():
-    """Displays the connection status and host name of the current agent."""
+@agent.command("info")
+def agent_info():
+    """Displays info about the connected Agent ID and current verification status."""
 
     credentials = load_credentials()
 
     if credentials:
+        host = credentials['host']
+        private_key = credentials['private_key']
+        api_base_url = credentials['api_base_url']
+
+        def make_agent_payload():
+            ts = str(int(time.time()))
+            msg = f"host={host};timestamp={ts}"
+            sig = sign_message(private_key, msg.encode())
+            return {"host": host, "signed_message": sig, "message": msg}
+
+        dns_status = "unknown"
+        legal_status = "unknown"
+
+        try:
+            dns_resp = requests.post(f"{api_base_url}/check_dns_status", json={"agent": make_agent_payload()}, timeout=10)
+            legal_resp = requests.post(f"{api_base_url}/check_legal_status", json={"agent": make_agent_payload()}, timeout=10)
+
+            dns_verified = dns_resp.status_code == 200 and dns_resp.json().get("status") == "True"
+            legal_verified = legal_resp.status_code == 200 and legal_resp.json().get("status") == "True"
+
+            dns_status = "verified" if dns_verified else "not verified"
+            legal_status = "verified" if legal_verified else "not verified"
+        except requests.exceptions.RequestException:
+            pass
+
         click.echo("\n")
         click.echo(f"Status:Connected")
         click.echo(f"Agent ID:   {credentials['host']}")
         click.echo(f"Operator:   {credentials['operator']}")
+        click.echo(f"DNS:   {dns_status}")
+        click.echo(f"Legal:   {legal_status}")
         click.echo(f"Path:   {NEURONUM_PATH}")
         click.echo("----------------------------")
 
-
-@click.command()
-def verify_agent():
-    """Verify domain ownership and submit business details in one step."""
-
-    credentials = load_credentials()
-    if not credentials:
-        return
-
-    host = credentials['host']
-    private_key = credentials['private_key']
-    api_base_url = credentials['api_base_url']
-
-    domain = host.replace("::agent", "").strip()
-
-    # --- Pre-check: fetch current DNS + legal status ---
-    def make_agent_payload():
-        ts = str(int(time.time()))
-        msg = f"host={host};timestamp={ts}"
-        sig = sign_message(private_key, msg.encode())
-        return {"host": host, "signed_message": sig, "message": msg}
-
-    click.echo("\nChecking current verification status...")
-    try:
-        dns_resp = requests.post(f"{api_base_url}/check_dns_status", json={"agent": make_agent_payload()}, timeout=10)
-        legal_resp = requests.post(f"{api_base_url}/check_legal_status", json={"agent": make_agent_payload()}, timeout=10)
-        dns_verified = dns_resp.status_code == 200 and dns_resp.json().get("status") == "True"
-        legal_verified = legal_resp.status_code == 200 and legal_resp.json().get("status") == "True"
-    except requests.exceptions.RequestException:
-        dns_verified = False
-        legal_verified = False
-
-    if dns_verified and legal_verified:
-        click.echo(f"Agent {host} ({credentials['operator']}) is already fully verified (DNS + Legal Entity).")
-        return
-
-    if dns_verified:
-        click.echo("DNS: verified")
-    else:
-        click.echo("DNS: not verified")
-
-    if legal_verified:
-        click.echo("Legal: verified")
-    else:
-        click.echo("Legal: pending")
-
-    # --- Step 1: Generate challenge and show DNS record ---
-    challenge_value = base64.urlsafe_b64encode(
-        hashlib.sha256(f"{host}{int(time.time())}".encode()).digest()
-    ).decode().rstrip("=")
-
-    click.echo(f"\nStep 1 — Add DNS TXT Record")
-    click.echo(f"\n  Name:   _neuronum.{domain}")
-    click.echo(f"  Type:   TXT")
-    click.echo(f"  Value:  {challenge_value}")
-    dns_confirmed = questionary.confirm("\nHave you added the DNS record?").ask()
-    if not dns_confirmed:
-        click.echo("Canceled.")
-        return
-
-    # --- Step 2: Collect business details ---
-    click.echo(f"\nStep 2 — Business Details")
-
-    business_address = questionary.text(f"Business address for {credentials['operator']}:").ask()
-    if not business_address:
-        click.echo("Canceled.")
-        return
-
-    registration_country = questionary.text("Registration country (e.g. DE, US):").ask()
-    if not registration_country:
-        click.echo("Canceled.")
-        return
-    
-    commercial_register_number = questionary.text("Commercial register number (leave blank if none):").ask()
-    commercial_register_number = commercial_register_number.strip() if commercial_register_number else "no_commercial_register_number"
-
-    vat_number = questionary.text("VAT number (leave blank if none):").ask()
-    vat_number = vat_number.strip() if vat_number else "no_vat_number"
-
-    # --- Step 3: Sign and submit everything in one call ---
-    timestamp = str(int(time.time()))
-    message = f"host={host};timestamp={timestamp}"
-    signature_b64 = sign_message(private_key, message.encode())
-    if not signature_b64:
-        return
-
-    click.echo("\nSubmitting verification...")
-    try:
-        response = requests.post(
-            f"{api_base_url}/verify_agent",
-            json={
-                "host": host,
-                "signed_message": signature_b64,
-                "message": message,
-                "challenge_value": challenge_value,
-                "domain": domain,
-                "business_address": business_address,
-                "registration_country": registration_country,
-                "commercial_register_number": commercial_register_number,
-                "vat_number": vat_number,
-            },
-            timeout=15
-        )
-        response.raise_for_status()
-        result = response.json()
-    except requests.exceptions.RequestException as e:
-        click.echo(f"Error: {e}")
-        return
-
-    if str(result.get("success", "")).lower() == "true":
-        click.echo(f"\nAgent verification successfully submitted.")
-        click.echo("use `verify-agent` to check the verification status.")
-    else:
-        click.echo(f"\nVerification failed.")
-        click.echo(f"Server response: {result.get('detail') or result}")
-
-
-@click.command()
+@agent.command("delete")
 def delete_agent():
     """Deletes the locally stored credentials and requests agent deletion from the server."""
 
@@ -582,7 +498,7 @@ def delete_agent():
         click.echo(f"Error:Neuronum Agent '{host}' deletion failed on server.")
 
 
-@click.command()
+@agent.command("disconnect")
 def disconnect_agent():
     """Removes local credentials without deleting the agent on the server."""
 
@@ -617,7 +533,7 @@ def disconnect_agent():
 
         if files_removed > 0:
             click.echo(f"Successfully disconnected. Your credentials are now removed locally.")
-            click.echo("You can reconnect later using your 12-word mnemonic (via `connect-agent`).")
+            click.echo("You can reconnect later using your 12-word mnemonic (via `neuronum agent connect`).")
         else:
             click.echo("Info:No credentials were found to remove.")
 
@@ -637,12 +553,6 @@ def start_mcp(network):
 
 # CLI Command Registration
 
-cli.add_command(create_agent)
-cli.add_command(connect_agent)
-cli.add_command(view_agent)
-cli.add_command(verify_agent)
-cli.add_command(delete_agent)
-cli.add_command(disconnect_agent)
 cli.add_command(start_mcp)
 
 if __name__ == "__main__":

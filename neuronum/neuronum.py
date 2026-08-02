@@ -453,8 +453,8 @@ class BaseClient(ABC):
     async def get_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         """Fetch and decrypt all messages for a session."""
 
-        if not isinstance(self, Agent):
-            raise ValueError("get_session_messages must be called from an Agent instance")
+        if not isinstance(self, AgentIdentity):
+            raise ValueError("get_session_messages must be called from an AgentIdentity instance")
 
         if not getattr(self, 'host', None):
             raise ValueError("host is required for get_session_messages")
@@ -627,8 +627,8 @@ class BaseClient(ABC):
     async def sync_messages(self) -> AsyncGenerator[Dict[str, Any], None]:
         """Stream and decrypt real-time messages from all sessions via SSE."""
 
-        if not isinstance(self, Agent):
-            raise ValueError("sync_messages must be called from an Agent instance")
+        if not isinstance(self, AgentIdentity):
+            raise ValueError("sync_messages must be called from an AgentIdentity instance")
 
         if not getattr(self, 'host', None):
             raise ValueError("host is required for sync_messages")
@@ -698,8 +698,8 @@ class BaseClient(ABC):
     async def send_session_message(self, session_id: str, data: Dict[str, Any]) -> bool:
         """Send an encrypted message to a secure agent session."""
         
-        if not isinstance(self, Agent):
-            raise ValueError("send_session_message must be called from an Agent instance")
+        if not isinstance(self, AgentIdentity):
+            raise ValueError("send_session_message must be called from an AgentIdentity instance")
 
         if not getattr(self, 'host', None):
             raise ValueError("host is required for send_session_message")
@@ -761,8 +761,8 @@ class BaseClient(ABC):
             return False
 
 
-class Agent(BaseClient):
-    """Agent client implementation"""
+class AgentIdentity(BaseClient):
+    """Agent Identity implementation"""
 
     def __init__(self, config: Optional[ClientConfig] = None, network: str = "neuronum.net"):
         if config is None:

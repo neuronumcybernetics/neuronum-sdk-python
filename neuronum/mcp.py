@@ -1,7 +1,7 @@
 """
 Neuronum MCP server (FastMCP).
 
-Exposes Neuronum Agent methods as MCP tools:
+Exposes Neuronum AgentIdentity methods as MCP tools:
   - list_agents:                 list agents visible to this agent
   - list_sessions:               list all secure agent sessions for this agent
   - fetch_session_metadata:      fetch metadata for a specific session
@@ -25,20 +25,20 @@ from typing import Any
 
 from fastmcp import FastMCP, Context
 
-from neuronum.neuronum import Agent
+from neuronum.neuronum import AgentIdentity
 
 
 # --- Lifecycle -------------------------------------------------------------
 
 @dataclass
 class AppContext:
-    agent: Agent
+    agent: AgentIdentity
 
 
 @asynccontextmanager
 async def lifespan(server: FastMCP):
     network = os.environ.get("NEURONUM_NETWORK", "neuronum.net")
-    agent = Agent(network=network)
+    agent = AgentIdentity(network=network)
     async with agent:
         yield AppContext(agent=agent)
 
@@ -57,7 +57,7 @@ async def list_agents(ctx: Context, update: bool = False) -> list[dict[str, Any]
                 from the network. If False (default), a cached result is
                 returned when it is still valid.
     """
-    agent: Agent = ctx.lifespan_context.agent
+    agent: AgentIdentity = ctx.lifespan_context.agent
     return await agent.list_agents(update=update)
 
 
@@ -68,7 +68,7 @@ async def list_sessions(ctx: Context) -> list[dict[str, Any]]:
     Returns a list of session metadata dicts, each containing at minimum
     session_id, requester_agent_id, and receiver_agent_id.
     """
-    agent: Agent = ctx.lifespan_context.agent
+    agent: AgentIdentity = ctx.lifespan_context.agent
     return await agent.list_sessions()
 
 
@@ -82,7 +82,7 @@ async def fetch_session_metadata(ctx: Context, session_id: str) -> dict[str, Any
     Returns:
         Session metadata dict, or an empty dict if not found.
     """
-    agent: Agent = ctx.lifespan_context.agent
+    agent: AgentIdentity = ctx.lifespan_context.agent
     result = await agent.fetch_session_metadata(session_id)
     return result or {}
 
@@ -100,7 +100,7 @@ async def get_session_messages(ctx: Context, session_id: str) -> list[dict[str, 
     Returns:
         A list of decrypted message dicts with keys: tx_id, time, sender, data.
     """
-    agent: Agent = ctx.lifespan_context.agent
+    agent: AgentIdentity = ctx.lifespan_context.agent
     messages = await agent.get_session_messages(session_id)
     return messages
 
@@ -127,7 +127,7 @@ async def create_secure_agent_session(
     if not recipient:
         raise ValueError("recipient is required.")
 
-    agent: Agent = ctx.lifespan_context.agent
+    agent: AgentIdentity = ctx.lifespan_context.agent
 
     result = await agent.create_secure_agent_session(
         instruct=instruct,
@@ -231,7 +231,7 @@ async def send_session_message(
                 raise ValueError("'components' is required for element='card'")
             data["components"] = components
 
-    agent: Agent = ctx.lifespan_context.agent
+    agent: AgentIdentity = ctx.lifespan_context.agent
     success = await agent.send_session_message(session_id=session_id, data=data)
     return {"success": success, "session_id": session_id}
 

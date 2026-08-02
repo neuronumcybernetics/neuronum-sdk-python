@@ -23,9 +23,9 @@
 
 ### **About**
 
-Neuronum is built around the [Secure Agent Session (SAS)](https://neuronum.net/secure-agent-session), an end-to-end encrypted channel designed for stateful agent-to-client and agent-to-agent communication across businesses, partners, and customers. A session connects two parties to automate data exchange, take actions, and coordinate tasks without manual integration, custom APIs, or file transfers.
+Neuronum is built around the [Secure Agent Session (SAS)](https://neuronum.net/secure-agent-session), an end-to-end encrypted channel designed for stateful agent-to-client and agent-to-agent communication across businesses, partners, and customers. A session connects two parties to automate data exchange without manual integration, custom APIs, or authentication.
 
-The SDK handles encryption, identity, and delivery. You write the agent logic.
+The SDK handles identity, encryption, auth, and delivery so you can concentrate on your Agent's logic.
 
 ------------------
 
@@ -51,42 +51,40 @@ pip install neuronum
 
 ------------------
 
-### **Agent**
+### **Agent ID**
 
-An Agent is your address used to send and receive data on the Neuronum network. You can think of it like a unique digital identity.
+To allow your Agent to connect to the Neuronum Network, you will need to create an Agent ID, a unique digital identity for end-to-end encrypted communication with other Agents and Clients.
 
-Example IDs: 
+Example ID: 
 acme.com::agent 
 
-**Create an Agent:**
+**Create your Agent ID:**
 ```sh
-neuronum create-agent
+neuronum agent create
+# Prompts you to select a Network (default: neuronum.net), enter a Company Name, Business Email, and verify your Email.
 ```
 This generates your Agent ID, public/private key pair, and a 12-word mnemonic recovery phrase. Your Agent credentials are stored locally at `~/.neuronum/.env`.
 
-**Connect your Agent** to a device using your 12-word mnemonic:
+**Connect your Agent ID** to a Server:
 ```sh
-neuronum connect-agent
+neuronum agent connect
+# Prompts you to enter your 12-word Agent Identity Recovery Phrase.
 ```
 
-**View** the connected Agent ID:
+Get **Info** about the connected Agent ID:
 ```sh
-neuronum view-agent
+neuronum agent info
+# Displays the Agent ID, Operator (Company), Verification Status, and the path where keys are stored.
 ```
 
-**Verify** the connected Agent ID:
+**Disconnect** your Agent ID from the Server:
 ```sh
-neuronum verify-agent
+neuronum agent disconnect
 ```
 
-**Disconnect** Agent credentials from this device:
+**Delete** your Agent ID permanently:
 ```sh
-neuronum disconnect-agent
-```
-
-**Delete** your Agent permanently from the network:
-```sh
-neuronum delete-agent
+neuronum agent delete
 ```
 
 ------------------
@@ -110,7 +108,7 @@ Agents interact on Neuronum using the following methods:
 
 All data is end-to-end encrypted. The network handles routing, key exchange, and delivery. You just send and receive.
 
-**Connecting to the network:** Use `async with Agent() as agent` to connect. This reads your Agent credentials from `~/.neuronum/.env` and establishes a connection to the Neuronum network at `neuronum.net`. Pass a `network` parameter only if you need to point at a different network.
+**Connecting to the network:** Use `async with AgentIdentity() as identity` to connect. This reads your Agent credentials from `~/.neuronum/.env` and establishes a connection to the Neuronum network at `neuronum.net`. Pass a `network` parameter only if you need to point at a different network.
 
 ------------------
 
@@ -119,11 +117,11 @@ All data is end-to-end encrypted. The network handles routing, key exchange, and
 **List Agents**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        agents = await agent.list_agents()
+    async with AgentIdentity() as identity:
+        agents = await identity.list_agents()
         print(agents)
 
 asyncio.run(main())
@@ -132,11 +130,11 @@ asyncio.run(main())
 **List Sessions**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        sessions = await agent.list_sessions()
+    async with AgentIdentity() as identity:
+        sessions = await identity.list_sessions()
         print(sessions)
 
 asyncio.run(main())
@@ -145,11 +143,11 @@ asyncio.run(main())
 **Create a Secure Agent Session**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        session = await agent.create_secure_agent_session(
+    async with AgentIdentity() as identity:
+        session = await identity.create_secure_agent_session(
             recipient="your@email.com",  #or recipient="acme.com::agent"
             instruct="Set specific goals, conversation context or further instructions",  #optional
             subject="Set session subject"  #optional - !Notice: Subject is sent in plaintext!
@@ -162,11 +160,11 @@ asyncio.run(main())
 **Fetch Session Metadata**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        metadata = await agent.fetch_session_metadata("session_id")
+    async with AgentIdentity() as identity:
+        metadata = await identity.fetch_session_metadata("session_id")
         print(metadata)
 
 asyncio.run(main())
@@ -175,11 +173,11 @@ asyncio.run(main())
 **Send a message to a session**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        success = await agent.send_session_message(
+    async with AgentIdentity() as identity:
+        success = await identity.send_session_message(
             "session_id",
             {"msg": "Hello"}
         )
@@ -191,11 +189,11 @@ asyncio.run(main())
 **Fetch messages from a session**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        messages = await agent.get_session_messages(session_id)
+    async with AgentIdentity() as identity:
+        messages = await identity.get_session_messages(session_id)
         print(messages)
 
 asyncio.run(main())
@@ -204,11 +202,11 @@ asyncio.run(main())
 **Upload a file to a session**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        success = await agent.upload_session_file(
+    async with AgentIdentity() as identity:
+        success = await identity.upload_session_file(
             "session_id",
             "/path/to/file.pdf",
             mime_type="application/pdf"
@@ -224,11 +222,11 @@ The `file_id` is available in the file metadata message sent automatically after
 
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        file_bytes = await agent.download_session_file("session_id", "file_id")
+    async with AgentIdentity() as identity:
+        file_bytes = await identity.download_session_file("session_id", "file_id")
         with open("output.pdf", "wb") as f:
             f.write(file_bytes)
 
@@ -238,11 +236,11 @@ asyncio.run(main())
 **Receive messages in real-time**
 ```python
 import asyncio
-from neuronum import Agent
+from neuronum import AgentIdentity
 
 async def main():
-    async with Agent() as agent:
-        async for message in agent.sync_messages():
+    async with AgentIdentity() as identity:
+        async for message in identity.sync_messages():
             print(message["session_id"], message["sender"], message["data"])
 
 asyncio.run(main())
@@ -267,7 +265,7 @@ Elements are UI components rendered on the client's frontend. Pass an `element` 
 
 **Confirm**
 ```python
-await agent.send_session_message(session_id, {
+await identity.send_session_message(session_id, {
     "msg": "Do you accept the session terms?",
     "element": "confirm"
 })
@@ -275,7 +273,7 @@ await agent.send_session_message(session_id, {
 
 **Choice**
 ```python
-await agent.send_session_message(session_id, {
+await identity.send_session_message(session_id, {
     "msg": "Which report format do you prefer?",
     "element": "choice",
     "choices": ["PDF", "CSV", "JSON"]
@@ -284,8 +282,8 @@ await agent.send_session_message(session_id, {
 
 **Input**
 ```python
-await agent.send_session_message(session_id, {
-    "msg": "What is your company name?",
+await identity.send_session_message(session_id, {
+    "msg": "Please enter your company name:",
     "element": "input",
     "placeholder": "e.g. Acme Corp"
 })
@@ -293,7 +291,7 @@ await agent.send_session_message(session_id, {
 
 **Form**
 ```python
-await agent.send_session_message(session_id, {
+await identity.send_session_message(session_id, {
     "msg": "Tell us about yourself:",
     "element": "form",
     "fields": [
@@ -306,14 +304,14 @@ await agent.send_session_message(session_id, {
 
 **Table**
 ```python
-await agent.send_session_message(session_id, {
-    "msg": "Here are the results:",
+await identity.send_session_message(session_id, {
+    "msg": "Your Order Summary:",
     "element": "table",
-    "columns": ["Name", "Status", "Score"],
+    "columns": ["Item", "Qty", "Price"],
     "rows": [
-        ["Alice", "Active", 92],
-        ["Bob", "Inactive", 74],
-        ["Carol", "Active", 88]
+        ["Widget A", 3, "9,00€"],
+        ["Widget B", 1, "4,50€"],
+        ["Widget C", 2, "1,50€"]
     ]
 })
 ```
@@ -323,7 +321,7 @@ await agent.send_session_message(session_id, {
 A card combines multiple elements into a single message.
 
 ```python
-await agent.send_session_message(session_id, {
+await identity.send_session_message(session_id, {
     "msg": "Review this proposal:",
     "element": "card",
     "components": [
@@ -337,10 +335,10 @@ await agent.send_session_message(session_id, {
 
 **File**
 
-Renders a file upload prompt on the client.
+Renders a file upload prompt on the identity.
 
 ```python
-await agent.send_session_message(session_id, {
+await identity.send_session_message(session_id, {
     "msg": "Please upload your contract:",
     "element": "file"
 })
@@ -351,7 +349,7 @@ await agent.send_session_message(session_id, {
 Renders a clickable button that opens a URL in a new browser tab.
 
 ```python
-await agent.send_session_message(session_id, {
+await identity.send_session_message(session_id, {
     "msg": "Click below to visit our website:",
     "link": "https://example.com",
     "element": "link"

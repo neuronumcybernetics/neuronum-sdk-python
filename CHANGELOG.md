@@ -20,6 +20,10 @@
 </p>
 
 ---
+### 2026.08.01 / Beta Launch
+**Changes:**
+-  renamed `Agent` class into `AgentIdentity` to prevent collision with common Agent Frameworks
+
 ### 2026.07.11 / Beta Launch
 **Changes:**
 -  replaced Neuronum Cell based identity into `Agent` (::cell, cell_id -> ::agent, agent_id)

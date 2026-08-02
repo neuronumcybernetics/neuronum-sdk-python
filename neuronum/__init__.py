@@ -1,1 +1,1 @@
-from .neuronum import Agent
+from .neuronum import AgentIdentity
